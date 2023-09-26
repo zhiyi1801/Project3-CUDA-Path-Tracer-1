@@ -9,7 +9,7 @@
  */
 __host__ __device__
 glm::vec3 calculateRandomDirectionInHemisphere(
-        glm::vec3 normal, thrust::default_random_engine &rng) {
+    glm::vec3 normal, thrust::default_random_engine& rng) {
     thrust::uniform_real_distribution<float> u01(0, 1);
 
     float up = sqrt(u01(rng)); // cos(theta)
@@ -24,9 +24,11 @@ glm::vec3 calculateRandomDirectionInHemisphere(
     glm::vec3 directionNotNormal;
     if (abs(normal.x) < SQRT_OF_ONE_THIRD) {
         directionNotNormal = glm::vec3(1, 0, 0);
-    } else if (abs(normal.y) < SQRT_OF_ONE_THIRD) {
+    }
+    else if (abs(normal.y) < SQRT_OF_ONE_THIRD) {
         directionNotNormal = glm::vec3(0, 1, 0);
-    } else {
+    }
+    else {
         directionNotNormal = glm::vec3(0, 0, 1);
     }
 
@@ -68,12 +70,35 @@ glm::vec3 calculateRandomDirectionInHemisphere(
  */
 __host__ __device__
 void scatterRay(
-        PathSegment & pathSegment,
-        glm::vec3 intersect,
-        glm::vec3 normal,
-        const Material &m,
-        thrust::default_random_engine &rng) {
+    PathSegment& pathSegment,
+    glm::vec3 intersect,
+    glm::vec3 normal,
+    const Material& m,
+    thrust::default_random_engine& rng) {
     // TODO: implement this.
     // A basic implementation of pure-diffuse shading will just call the
     // calculateRandomDirectionInHemisphere defined above.
+    glm::vec3 reflDir;
+    const float reflProb = 0.5;
+    thrust::uniform_real_distribution<float> u01(0, 1);
+    if (m.hasReflective)
+    {
+        float sample01 = u01(rng);
+        if(sample01 > reflProb)
+        {
+            reflDir = glm::reflect(pathSegment.ray.direction, normal);
+            pathSegment.ray.direction = reflDir;
+            pathSegment.color *= m.specular.color * glm::dot(normal, reflDir)/(1-reflProb);
+            pathSegment.ray.origin = intersect + 0.00001f * reflDir;
+        }
+        else
+        {
+            pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
+            pathSegment.color *= m.color/reflProb;
+            pathSegment.ray.origin = intersect + 0.00001f * pathSegment.ray.direction;
+        }
+    }
+    pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
+    pathSegment.color *= m.color;
+    pathSegment.ray.origin = intersect + 0.0001f * pathSegment.ray.direction;
 }
