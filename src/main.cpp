@@ -32,6 +32,7 @@ int height;
 //-------------------------------
 
 int main(int argc, char** argv) {
+
 	startTimeString = currentTimeString();
 
 	if (argc < 2) {
@@ -43,6 +44,10 @@ int main(int argc, char** argv) {
 
 	// Load scene file
 	scene = new Scene(sceneFile);
+
+
+	// Set the data that will be passed to the gpu
+	//scene->setDevData();
 
 	//Create Instance for ImGUIData
 	guiData = new GuiDataContainer();
@@ -77,8 +82,12 @@ int main(int argc, char** argv) {
 	InitImguiData(guiData);
 	InitDataContainer(guiData);
 
+	scene->setDevData();
 	// GLFW main loop
 	mainLoop();
+
+	Resource::clear();
+	scene->clear();
 
 	return 0;
 }

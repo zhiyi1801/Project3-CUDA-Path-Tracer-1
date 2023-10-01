@@ -4,17 +4,25 @@
 #include <vector>
 #include <cuda_runtime.h>
 #include "glm/glm.hpp"
+#include "utilities.h"
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
+class MeshData;
 enum GeomType {
     SPHERE,
     CUBE,
+    OBJ,
 };
 
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
+    glm::vec3 direction_inv;
+    __host__ __device__ glm::vec3 getPoint(float dist)
+    {
+        return origin + direction * dist;
+    }
 };
 
 struct Geom {
@@ -26,6 +34,9 @@ struct Geom {
     glm::mat4 transform;
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
+
+    MeshData* mesh;
+    //int protoId;
 };
 
 struct Material {
@@ -74,3 +85,4 @@ struct ShadeableIntersection {
   glm::vec3 surfaceNormal;
   int materialId;
 };
+

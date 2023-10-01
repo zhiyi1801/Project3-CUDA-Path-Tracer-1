@@ -4,7 +4,34 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
 
-Scene::Scene(string filename) {
+void checkCUDAErrorFn(const char* msg, const char* file, int line) {
+#if ERRORCHECK
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (cudaSuccess == err) {
+        return;
+    }
+
+    fprintf(stderr, "CUDA error");
+    if (file) {
+        fprintf(stderr, " (%s:%d)", file, line);
+    }
+    fprintf(stderr, ": %s: %s\n", msg, cudaGetErrorString(err));
+#  ifdef _WIN32
+    getchar();
+#  endif
+    exit(EXIT_FAILURE);
+#endif
+}
+
+namespace Resource
+{
+    int meshCount(0);
+    std::vector<MeshData*> meshDataPool;
+    std::map<std::string, int> meshDataIdx;
+}
+
+Scene::Scene(const string& filename) {
     cout << "Reading scene from " << filename << " ..." << endl;
     cout << " " << endl;
     char* fname = (char*)filename.c_str();
@@ -21,10 +48,12 @@ Scene::Scene(string filename) {
             if (strcmp(tokens[0].c_str(), "MATERIAL") == 0) {
                 loadMaterial(tokens[1]);
                 cout << " " << endl;
-            } else if (strcmp(tokens[0].c_str(), "OBJECT") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "OBJECT") == 0) {
                 loadGeom(tokens[1]);
                 cout << " " << endl;
-            } else if (strcmp(tokens[0].c_str(), "CAMERA") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "CAMERA") == 0) {
                 loadCamera();
                 cout << " " << endl;
             }
@@ -37,10 +66,13 @@ int Scene::loadGeom(string objectid) {
     if (id != geoms.size()) {
         cout << "ERROR: OBJECT ID does not match expected number of geoms" << endl;
         return -1;
-    } else {
+    }
+    else {
         cout << "Loading Geom " << id << "..." << endl;
         Geom newGeom;
         string line;
+        newGeom.mesh = nullptr;
+        //newGeom.protoId = -1;
 
         //load object type
         utilityCore::safeGetline(fp_in, line);
@@ -48,9 +80,16 @@ int Scene::loadGeom(string objectid) {
             if (strcmp(line.c_str(), "sphere") == 0) {
                 cout << "Creating new sphere..." << endl;
                 newGeom.type = SPHERE;
-            } else if (strcmp(line.c_str(), "cube") == 0) {
+            }
+            else if (strcmp(line.c_str(), "cube") == 0) {
                 cout << "Creating new cube..." << endl;
                 newGeom.type = CUBE;
+            }
+            else if (line.find(".obj") != line.npos)
+            {
+                cout << "---Loading obj file " << line << "---" << endl;
+                newGeom.type = OBJ;
+                newGeom.mesh = Resource::loadObj(line);
             }
         }
 
@@ -70,9 +109,11 @@ int Scene::loadGeom(string objectid) {
             //load tranformations
             if (strcmp(tokens[0].c_str(), "TRANS") == 0) {
                 newGeom.translation = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
-            } else if (strcmp(tokens[0].c_str(), "ROTAT") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "ROTAT") == 0) {
                 newGeom.rotation = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
-            } else if (strcmp(tokens[0].c_str(), "SCALE") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "SCALE") == 0) {
                 newGeom.scale = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
             }
 
@@ -80,7 +121,7 @@ int Scene::loadGeom(string objectid) {
         }
 
         newGeom.transform = utilityCore::buildTransformationMatrix(
-                newGeom.translation, newGeom.rotation, newGeom.scale);
+            newGeom.translation, newGeom.rotation, newGeom.scale);
         newGeom.inverseTransform = glm::inverse(newGeom.transform);
         newGeom.invTranspose = glm::inverseTranspose(newGeom.transform);
 
@@ -91,8 +132,8 @@ int Scene::loadGeom(string objectid) {
 
 int Scene::loadCamera() {
     cout << "Loading Camera ..." << endl;
-    RenderState &state = this->state;
-    Camera &camera = state.camera;
+    RenderState& state = this->state;
+    Camera& camera = state.camera;
     float fovy;
 
     //load static properties
@@ -103,13 +144,17 @@ int Scene::loadCamera() {
         if (strcmp(tokens[0].c_str(), "RES") == 0) {
             camera.resolution.x = atoi(tokens[1].c_str());
             camera.resolution.y = atoi(tokens[2].c_str());
-        } else if (strcmp(tokens[0].c_str(), "FOVY") == 0) {
+        }
+        else if (strcmp(tokens[0].c_str(), "FOVY") == 0) {
             fovy = atof(tokens[1].c_str());
-        } else if (strcmp(tokens[0].c_str(), "ITERATIONS") == 0) {
+        }
+        else if (strcmp(tokens[0].c_str(), "ITERATIONS") == 0) {
             state.iterations = atoi(tokens[1].c_str());
-        } else if (strcmp(tokens[0].c_str(), "DEPTH") == 0) {
+        }
+        else if (strcmp(tokens[0].c_str(), "DEPTH") == 0) {
             state.traceDepth = atoi(tokens[1].c_str());
-        } else if (strcmp(tokens[0].c_str(), "FILE") == 0) {
+        }
+        else if (strcmp(tokens[0].c_str(), "FILE") == 0) {
             state.imageName = tokens[1];
         }
     }
@@ -120,9 +165,11 @@ int Scene::loadCamera() {
         vector<string> tokens = utilityCore::tokenizeString(line);
         if (strcmp(tokens[0].c_str(), "EYE") == 0) {
             camera.position = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
-        } else if (strcmp(tokens[0].c_str(), "LOOKAT") == 0) {
+        }
+        else if (strcmp(tokens[0].c_str(), "LOOKAT") == 0) {
             camera.lookAt = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
-        } else if (strcmp(tokens[0].c_str(), "UP") == 0) {
+        }
+        else if (strcmp(tokens[0].c_str(), "UP") == 0) {
             camera.up = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
         }
 
@@ -137,7 +184,7 @@ int Scene::loadCamera() {
 
     camera.right = glm::normalize(glm::cross(camera.view, camera.up));
     camera.pixelLength = glm::vec2(2 * xscaled / (float)camera.resolution.x,
-                                   2 * yscaled / (float)camera.resolution.y);
+        2 * yscaled / (float)camera.resolution.y);
 
     camera.view = glm::normalize(camera.lookAt - camera.position);
 
@@ -155,7 +202,8 @@ int Scene::loadMaterial(string materialid) {
     if (id != materials.size()) {
         cout << "ERROR: MATERIAL ID does not match expected number of materials" << endl;
         return -1;
-    } else {
+    }
+    else {
         cout << "Loading Material " << id << "..." << endl;
         Material newMaterial;
 
@@ -165,24 +213,160 @@ int Scene::loadMaterial(string materialid) {
             utilityCore::safeGetline(fp_in, line);
             vector<string> tokens = utilityCore::tokenizeString(line);
             if (strcmp(tokens[0].c_str(), "RGB") == 0) {
-                glm::vec3 color( atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()) );
+                glm::vec3 color(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
                 newMaterial.color = color;
-            } else if (strcmp(tokens[0].c_str(), "SPECEX") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "SPECEX") == 0) {
                 newMaterial.specular.exponent = atof(tokens[1].c_str());
-            } else if (strcmp(tokens[0].c_str(), "SPECRGB") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "SPECRGB") == 0) {
                 glm::vec3 specColor(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
                 newMaterial.specular.color = specColor;
-            } else if (strcmp(tokens[0].c_str(), "REFL") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "REFL") == 0) {
                 newMaterial.hasReflective = atof(tokens[1].c_str());
-            } else if (strcmp(tokens[0].c_str(), "REFR") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "REFR") == 0) {
                 newMaterial.hasRefractive = atof(tokens[1].c_str());
-            } else if (strcmp(tokens[0].c_str(), "REFRIOR") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "REFRIOR") == 0) {
                 newMaterial.indexOfRefraction = atof(tokens[1].c_str());
-            } else if (strcmp(tokens[0].c_str(), "EMITTANCE") == 0) {
+            }
+            else if (strcmp(tokens[0].c_str(), "EMITTANCE") == 0) {
                 newMaterial.emittance = atof(tokens[1].c_str());
             }
         }
         materials.push_back(newMaterial);
         return 1;
     }
+}
+
+void Scene::setDevData()
+{
+    for (const auto& g : geoms)
+    {
+        if (g.type != OBJ) continue;
+        for (const auto& t : g.mesh->triangles)
+        {
+            Triangle temp_t;
+            for (int i = 0; i < 3; ++i)
+            {
+                temp_t.v[i] = glm::vec3(g.transform * glm::vec4(t.v[i], 1.0f));
+                temp_t.n[i] = glm::normalize(glm::vec3(g.invTranspose * glm::vec4(t.n[i], 0.0f)));
+                temp_t.tex[i] = t.tex[i];
+            }
+            triangles.push_back(temp_t);
+        }
+    }
+    this->tempDevScene.initiate(*this);
+    cudaMalloc(&dev_scene, sizeof(DevScene));
+    cudaMemcpy(dev_scene, &tempDevScene, sizeof(DevScene), cudaMemcpyHostToDevice);
+    checkCUDAError("dev_scene");
+}
+
+MeshData* Resource::loadObj(const string& filename)
+{
+    auto exist = meshDataIdx.find(filename);
+    if (exist != meshDataIdx.end())
+    {
+        //protoId = exist->second;
+        return meshDataPool[exist->second];
+    }
+
+    MeshData* model = new MeshData;
+
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::string warn, err;
+    model->area = 0;
+
+    std::cout << "---Loading model " << filename << "---" << std::endl;
+    if (!tinyobj::LoadObj(&attrib, &shapes, nullptr, &warn, &err, filename.c_str()))
+    {
+        std::cout << "---Fail Error msg " << err << "---" << std::endl;
+        return nullptr;
+    }
+
+    if (!warn.empty())
+    {
+        std::cout << "---Warn Error msg " << warn << "---" << std::endl;
+    }
+    bool hasTex = !attrib.texcoords.empty();
+
+    glm::vec3 min_vert = glm::vec3{ std::numeric_limits<float>::infinity(),
+                                 std::numeric_limits<float>::infinity(),
+                                 std::numeric_limits<float>::infinity() };
+    glm::vec3 max_vert = glm::vec3{ -std::numeric_limits<float>::infinity(),
+                                 -std::numeric_limits<float>::infinity(),
+                                 -std::numeric_limits<float>::infinity() };
+
+    for (const auto& shape : shapes)
+    {
+        size_t index_offset = 0;
+        for (const auto& fn : shape.mesh.num_face_vertices)
+        {
+            for (int i = 0; i < fn - 2; ++i)
+            {
+                auto idx0 = shape.mesh.indices[index_offset], idx1 = shape.mesh.indices[index_offset + i + 1], idx2 = shape.mesh.indices[index_offset + i + 2];
+
+                std::array<glm::vec3, 3> _v{ *((glm::vec3*)attrib.vertices.data() + idx0.vertex_index),
+                                             *((glm::vec3*)attrib.vertices.data() + idx1.vertex_index),
+                                             *((glm::vec3*)attrib.vertices.data() + idx2.vertex_index) };
+
+                std::array<glm::vec3, 3> _n{ *((glm::vec3*)attrib.normals.data() + idx0.normal_index),
+                                             *((glm::vec3*)attrib.normals.data() + idx1.normal_index),
+                                             *((glm::vec3*)attrib.normals.data() + idx2.normal_index) };
+
+                std::array<glm::vec2, 3> _tex;
+                if (hasTex)
+                {
+                    _tex = std::array<glm::vec2, 3>{ *((glm::vec2*)attrib.texcoords.data() + idx0.texcoord_index),
+                        * ((glm::vec2*)attrib.texcoords.data() + idx1.texcoord_index),
+                        * ((glm::vec2*)attrib.texcoords.data() + idx2.texcoord_index) };
+                }
+                Triangle tri(_v, _n, _tex);
+                model->triangles.push_back(tri);
+                model->area += tri.area;
+                for (int j = 0; j < 3; ++j)
+                {
+                    min_vert = glm::min(min_vert, tri.v[i]);
+                    max_vert = glm::max(max_vert, tri.v[i]);
+                }
+            }
+            index_offset += fn;
+        }
+    }
+    model->boundingBox = Bounds3(min_vert, max_vert);
+    Resource::meshDataPool.push_back(model);
+    Resource::meshDataIdx[filename] = meshCount++;
+    //protoId = meshCount++;
+    return model;
+}
+
+void Scene::clear()
+{
+    tempDevScene.destroy();
+    cudaSafeFree(dev_scene);
+}
+
+void Resource::clear()
+{
+    for (auto& m : meshDataPool)
+    {
+        delete m;
+    }
+    meshDataPool.clear();
+}
+
+void DevScene::initiate(const Scene& scene)
+{
+    tri_num = scene.triangles.size();
+    cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
+    cudaMemcpy(dev_triangles, scene.triangles.data(), sizeof(Triangle) * scene.triangles.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene::triangles");
+}
+
+void DevScene::destroy()
+{
+    cudaSafeFree(dev_triangles);
 }

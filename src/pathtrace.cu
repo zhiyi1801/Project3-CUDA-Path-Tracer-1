@@ -16,30 +16,6 @@
 #include "intersections.h"
 #include "interactions.h"
 
-#define ERRORCHECK 1
-
-#define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
-void checkCUDAErrorFn(const char* msg, const char* file, int line) {
-#if ERRORCHECK
-	cudaDeviceSynchronize();
-	cudaError_t err = cudaGetLastError();
-	if (cudaSuccess == err) {
-		return;
-	}
-
-	fprintf(stderr, "CUDA error");
-	if (file) {
-		fprintf(stderr, " (%s:%d)", file, line);
-	}
-	fprintf(stderr, ": %s: %s\n", msg, cudaGetErrorString(err));
-#  ifdef _WIN32
-	getchar();
-#  endif
-	exit(EXIT_FAILURE);
-#endif
-}
-
 __host__ __device__
 thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth) {
 	int h = utilhash((1 << 31) | (depth << 22) | iter) ^ utilhash(index);
@@ -78,6 +54,7 @@ static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+static DevScene* dev_scene = NULL;
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
@@ -86,6 +63,8 @@ void InitDataContainer(GuiDataContainer* imGuiData)
 
 void pathtraceInit(Scene* scene) {
 	hst_scene = scene;
+
+	dev_scene = hst_scene->dev_scene;
 
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -110,11 +89,11 @@ void pathtraceInit(Scene* scene) {
 }
 
 void pathtraceFree() {
-	cudaFree(dev_image);  // no-op if dev_image is null
-	cudaFree(dev_paths);
-	cudaFree(dev_geoms);
-	cudaFree(dev_materials);
-	cudaFree(dev_intersections);
+	cudaSafeFree(dev_image);  // no-op if dev_image is null
+	cudaSafeFree(dev_paths);
+	cudaSafeFree(dev_geoms);
+	cudaSafeFree(dev_materials);
+	cudaSafeFree(dev_intersections);
 	// TODO: clean up any extra device memory you created
 
 	checkCUDAError("pathtraceFree");
@@ -144,8 +123,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		// TODO: implement antialiasing by jittering the ray
 		segment.ray.direction = glm::normalize(cam.view
-			- cam.right * cam.pixelLength.x * (float)(x - (float)cam.resolution.x * 0.5f)
-				- cam.up * cam.pixelLength.y * (float)(y - (float)cam.resolution.y * 0.5f));
+			- cam.right * cam.pixelLength.x * (float)(x + u01(rng) - (float)cam.resolution.x * 0.5f)
+			- cam.up * cam.pixelLength.y * (float)(y + u01(rng) - (float)cam.resolution.y * 0.5f));
 
 		segment.pixelIndex = index;
 		segment.remainingBounces = traceDepth;
@@ -162,6 +141,7 @@ __global__ void computeIntersections(
 	, PathSegment* pathSegments
 	, Geom* geoms
 	, int geoms_size
+	, DevScene* dev_scene
 	, ShadeableIntersection* intersections
 )
 {
@@ -208,6 +188,22 @@ __global__ void computeIntersections(
 			}
 		}
 
+		for (int i = 0; i < dev_scene->tri_num; ++i)
+		{
+			float u, v;
+			Triangle tempTri = dev_scene->dev_triangles[i];
+			bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
+			if (isHit && t_min > t)
+			{
+				t_min = t;
+				//MYTODO
+				hit_geom_index = 6;
+				intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
+				intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
+				normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+			}
+		}
+
 		if (hit_geom_index == -1)
 		{
 			intersections[path_index].t = -1.0f;
@@ -242,7 +238,7 @@ __global__ void shadeFakeMaterial(
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx < num_paths)
 	{
-		int pixelIdx = pathSegments[idx].pixelIndex;
+		volatile int pixelIdx = pathSegments[idx].pixelIndex;
 		ShadeableIntersection intersection = shadeableIntersections[idx];
 		if (intersection.t > 0.0f) { // if the intersection exists...
 		  // Set up the RNG
@@ -377,6 +373,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			, dev_paths
 			, dev_geoms
 			, hst_scene->geoms.size()
+			, dev_scene
 			, dev_intersections
 			);
 		checkCUDAError("trace one bounce");

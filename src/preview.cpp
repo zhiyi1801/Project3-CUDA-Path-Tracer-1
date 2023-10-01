@@ -202,7 +202,6 @@ void RenderImGui()
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 	static float f = 0.0f;
 	static int counter = 0;
-
 	ImGui::Begin("Path Tracer Analytics");                  // Create a window called "Hello, world!" and append into it.
 	
 	// LOOK: Un-Comment to check the output window and usage
