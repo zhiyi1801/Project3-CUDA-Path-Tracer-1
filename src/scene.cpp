@@ -59,6 +59,7 @@ Scene::Scene(const string& filename) {
             }
         }
     }
+
 }
 
 int Scene::loadGeom(string objectid) {
@@ -258,6 +259,8 @@ void Scene::setDevData()
             triangles.push_back(temp_t);
         }
     }
+
+    this->bvhConstructor.buildBVH(this->triangles, this->bvhNodes, BVHAccel::SplitMethod::NAIVE);
     this->tempDevScene.initiate(*this);
     cudaMalloc(&dev_scene, sizeof(DevScene));
     cudaMemcpy(dev_scene, &tempDevScene, sizeof(DevScene), cudaMemcpyHostToDevice);
@@ -363,10 +366,15 @@ void DevScene::initiate(const Scene& scene)
     tri_num = scene.triangles.size();
     cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
     cudaMemcpy(dev_triangles, scene.triangles.data(), sizeof(Triangle) * scene.triangles.size(), cudaMemcpyHostToDevice);
-    checkCUDAError("DevScene::triangles");
+    checkCUDAError("DevScene initiate::triangles");
+
+    cudaMalloc(&dev_bvhTree, sizeof(BVHNode) * scene.bvhNodes.size());
+    cudaMemcpy(dev_bvhTree, scene.bvhNodes.data(), sizeof(BVHNode) * scene.bvhNodes.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::bvh tree");
 }
 
 void DevScene::destroy()
 {
     cudaSafeFree(dev_triangles);
+    cudaSafeFree(dev_bvhTree);
 }
