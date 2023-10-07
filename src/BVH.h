@@ -27,7 +27,7 @@ public:
 	void buildNAIVE(std::vector<Triangle>& t,
 		std::vector<BVHNode>& nodes);
 
-	bool Intersect(const Ray& ray, float& t, int& primIdx);
+	//bool Intersect(const Ray& ray, float& t, int& primIdx);
 };
 
 struct BVHNode

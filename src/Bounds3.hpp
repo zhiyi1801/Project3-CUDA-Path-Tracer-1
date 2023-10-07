@@ -2,6 +2,7 @@
 #include<limits>
 #include<array>
 #include<vector>
+#include <thrust/execution_policy.h>
 #include "glm/glm.hpp"
 #include "glm/gtx/norm.hpp"
 #include "sceneStructs.h"
@@ -10,6 +11,8 @@ class Bounds3
 {
 public:
 	glm::vec3 pMin, pMax;
+
+	__host__ __device__
 	Bounds3()
 	{
 		double minNum = std::numeric_limits<double>::lowest();
@@ -18,7 +21,10 @@ public:
 		pMax = glm::vec3(minNum, minNum, minNum);
 	}
 
+	__host__ __device__
 	Bounds3(const glm::vec3& p) : pMin(p), pMax(p) {}
+
+	__host__ __device__
 	Bounds3(const glm::vec3& p1, const glm::vec3& p2)
 	{
 		//pMin = glm::vec3(fmin(p1.x, p2.x), fmin(p1.y, p2.y), fmin(p1.z, p2.z));
@@ -27,6 +33,7 @@ public:
 		pMax = glm::max(p1, p2);
 	}
 
+	__host__ __device__
 	Bounds3& operator=(const Bounds3& b)
 	{
 		this->pMin = b.pMin;
@@ -34,10 +41,13 @@ public:
 		return *this;
 	}
 
+	__host__ __device__
 	glm::vec3 Diagonal() const { return pMax - pMin; }
 
+	__host__ __device__
 	glm::vec3 Centroid()const { return (pMax + pMin) / 2.0f; }
 
+	__host__ __device__
 	int MaxExtent()
 	{
 		glm::vec3 diag = Diagonal();
@@ -46,17 +56,20 @@ public:
 		else return 2;
 	}
 
+	__host__ __device__
 	double SurfaceArea()
 	{
 		glm::vec3 d = Diagonal();
 		double area = 2 * ((double)d.x * (double)d.y + (double)d.y * (double)d.z + (double)d.z * (double)d.x);
 	}
 
+	__host__ __device__
 	glm::vec3 Centroid()
 	{
 		return (pMax + pMin) / 2.0f;
 	}
 
+	__host__ __device__
 	glm::vec3 Offset(const glm::vec3 p)
 	{
 		glm::vec3 o = p - pMin;
@@ -68,6 +81,7 @@ public:
 		return o;
 	}
 
+	__host__ __device__
 	bool Overlaps(const Bounds3& b)
 	{
 		bool x = (pMax.x >= b.pMin.x) && (pMin.x <= b.pMax.x);
@@ -77,18 +91,22 @@ public:
 		return x && y && z;
 	}
 
+	__host__ __device__
 	bool Inside(const glm::vec3& p)
 	{
 		return(p.x < pMax.x&& p.x > pMin.x && p.y < pMax.y&& p.y > pMin.y && p.z < pMax.z&& p.z > pMin.z);
 	}
 
+	__host__ __device__
 	inline const glm::vec3& operator[](int i)
 	{
 		return (i == 0 ? pMin : pMax);
 	}
 
+	__host__ __device__
 	inline bool IntersectP(const Ray& ray);
 
+	__host__ __device__
 	Bounds3& Union(const Bounds3& b)
 	{
 		pMin = glm::min(pMin, b.pMin);
@@ -97,10 +115,11 @@ public:
 	}
 };
 
+__host__ __device__
 inline bool Bounds3::IntersectP(const Ray& ray)
 {
 	glm::vec3 o = ray.origin;
-	const glm::vec3 &invDir = ray.direction_inv;
+	const glm::vec3 invDir = 1.0f/ray.direction;
 	double tEnter = std::numeric_limits<double>::lowest();
 	double tExit = std::numeric_limits<double>::max();
 
@@ -116,15 +135,16 @@ inline bool Bounds3::IntersectP(const Ray& ray)
 		{
 			tMax = ((double)pMax[i] - o[i]) * invDir[i];
 			tMin = ((double)pMin[i] - o[i]) * invDir[i];
+			if (ray.direction[i] < 0) thrust::swap(tMax, tMin);
+			tEnter = tMin > tEnter ? tMin : tEnter;
+			tExit = tMax < tExit ? tMax : tExit;
 		}
-		if (ray.direction[i] < 0) std::swap(tMax, tMin);
-		tEnter = std::max(tMax, tEnter);
-		tExit = std::min(tMin, tExit);
 	}
 
-	return tEnter <= tExit && tExit > 0;
+	return tEnter <= tExit && tEnter > 0;
 }
 
+__host__ __device__
 inline Bounds3 Union(const Bounds3& b, const glm::vec3& p)
 {
 	Bounds3 ret;
@@ -133,6 +153,7 @@ inline Bounds3 Union(const Bounds3& b, const glm::vec3& p)
 	return ret;
 }
 
+__host__ __device__
 inline Bounds3 Union(const Bounds3& b1, const Bounds3& b2)
 {
 	Bounds3 ret;

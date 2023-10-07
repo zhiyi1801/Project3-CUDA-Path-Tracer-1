@@ -161,6 +161,9 @@ __global__ void computeIntersections(
 		glm::vec3 tmp_intersect;
 		glm::vec3 tmp_normal;
 
+		BVHNode* bvhTree = dev_scene->dev_bvhTree;
+		Triangle* triangles = dev_scene->dev_triangles;
+
 		// naive parse through global geoms
 
 		for (int i = 0; i < geoms_size; i++)
@@ -188,20 +191,50 @@ __global__ void computeIntersections(
 			}
 		}
 
-		for (int i = 0; i < dev_scene->tri_num; ++i)
+		//for (int i = 0; i < dev_scene->tri_num; ++i)
+		//{
+		//	float u, v;
+		//	Triangle tempTri = dev_scene->dev_triangles[i];
+		//	bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
+		//	if (isHit && t_min > t)
+		//	{
+		//		t_min = t;
+		//		//MYTODO
+		//		hit_geom_index = 6;
+		//		intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
+		//		intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
+		//		normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+		//	}
+		//}
+
+		int bvhIdx = 0;
+		int triangleId = -1;
+		int bvhNodeNum = 2 * dev_scene->tri_num - 1;
+		Triangle tempTri;
+		while (bvhIdx != -1 && bvhIdx < bvhNodeNum)
 		{
-			float u, v;
-			Triangle tempTri = dev_scene->dev_triangles[i];
-			bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
-			if (isHit && t_min > t)
+			if (!(bvhTree[bvhIdx].bBox.IntersectP(pathSegment.ray)))
 			{
-				t_min = t;
-				//MYTODO
-				hit_geom_index = 6;
-				intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
-				intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
-				normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+				bvhIdx = bvhTree[bvhIdx].miss;
+				continue;
 			}
+			triangleId = bvhTree[bvhIdx].primitiveId;
+			tempTri = triangles[triangleId];
+			if (triangleId != -1)
+			{
+				float u, v;
+				bool isHit = triangles[triangleId].getInterSect(pathSegment.ray, t, u, v);
+				if (isHit && t_min > t)
+				{
+					t_min = t;
+					//MYTODO
+					hit_geom_index = 6;
+					intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
+					intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
+					normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+				}
+			}
+			bvhIdx++;
 		}
 
 		if (hit_geom_index == -1)

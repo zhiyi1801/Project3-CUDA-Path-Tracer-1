@@ -31,8 +31,16 @@ int height;
 //-------------MAIN--------------
 //-------------------------------
 
+void testfunc()
+{
+	Bounds3 box{ glm::vec3(0), glm::vec3(30, 30, 30) };
+	Ray ray{ glm::vec3(10,10,40), glm::vec3(0,0,-1) };
+	bool b = box.IntersectP(ray);
+}
+
 int main(int argc, char** argv) {
 
+	//testfunc();
 	startTimeString = currentTimeString();
 
 	if (argc < 2) {

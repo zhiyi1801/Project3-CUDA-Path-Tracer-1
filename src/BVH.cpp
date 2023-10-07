@@ -59,7 +59,7 @@ void BVHAccel::buildNAIVE(std::vector<Triangle>& t,
 		bBox = Bounds3();
 		int start = info.start, end = info.end, depth = info.depth, offset = info.offset;
 		int lastLayerMax = (1 << (maxPerfectDepth + 1));
-		int lastLayerStartIdx = lastLayerMax * offset / (1 << depth);
+		int lastLayerStartIdx = lastLayerMax / (1 << depth) * offset;
 		int miss = -1;
 		for (int i = start; i < end; ++i)
 		{
@@ -121,6 +121,7 @@ void BVHAccel::buildNAIVE(std::vector<Triangle>& t,
 			int log2tNum = log2(tNum);
 			//int leftTNum = (1 << log2tNum);
 			int lastLayerLStart = lastLayerStartIdx;
+			//e.g. 12 -> [8,4], 11 -> [7,4], 13 -> [8,5]
 			int leftTNum = (1 << (maxPerfectDepth - depth - 1)) + std::max(std::min((lastLayerNum - lastLayerStartIdx)/2, 1 << (maxPerfectDepth - depth - 1)), 0);
 
 			if (leftTNum == tNum) { leftTNum >>= 1; }

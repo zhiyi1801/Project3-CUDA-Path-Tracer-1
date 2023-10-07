@@ -18,7 +18,6 @@ enum GeomType {
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
-    glm::vec3 direction_inv;
     __host__ __device__ glm::vec3 getPoint(float dist)
     {
         return origin + direction * dist;
