@@ -8,6 +8,10 @@
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
+#define USE_BVH 1
+#define USE_SAH 1
+#define USE_MTBVH 1
+
 class MeshData;
 enum GeomType {
     SPHERE,

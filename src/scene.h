@@ -28,8 +28,9 @@ public:
     void destroy();
 
     int tri_num;
+    int bvh_size;
     Triangle* dev_triangles;
-    BVHNode* dev_bvhTree;
+    GpuBVHNode* dev_gpuBVH;
 };
 
 class Scene {
@@ -46,7 +47,11 @@ public:
     std::vector<Geom> geoms;
     std::vector<Material> materials;
     std::vector<Triangle> triangles;
-    std::vector<BVHNode> bvhNodes;
+
+    std::vector<GpuBVHNodeInfo> gpuBVHNodeInfos;
+    std::vector<GpuBVHNode> gpuBVHNodes;
+    RecursiveBVHNode* bvhRoot;
+
     BVHAccel bvhConstructor;
     DevScene tempDevScene;
     DevScene* dev_scene;
@@ -70,8 +75,8 @@ namespace Resource
 class MeshData
 {
 public:
-    float area;
-    Bounds3 boundingBox;
+    //float area;
+    //Bounds3 boundingBox;
     std::vector<Triangle> triangles;
 };
 

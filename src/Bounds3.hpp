@@ -61,6 +61,7 @@ public:
 	{
 		glm::vec3 d = Diagonal();
 		double area = 2 * ((double)d.x * (double)d.y + (double)d.y * (double)d.z + (double)d.z * (double)d.x);
+		return area;
 	}
 
 	__host__ __device__
@@ -107,6 +108,9 @@ public:
 	inline bool IntersectP(const Ray& ray);
 
 	__host__ __device__
+	inline bool IntersectP(const Ray& ray, float& t);
+
+	__host__ __device__
 	Bounds3& Union(const Bounds3& b)
 	{
 		pMin = glm::min(pMin, b.pMin);
@@ -145,6 +149,35 @@ inline bool Bounds3::IntersectP(const Ray& ray)
 }
 
 __host__ __device__
+inline bool Bounds3::IntersectP(const Ray& ray, float& t)
+{
+	glm::vec3 o = ray.origin;
+	const glm::vec3 invDir = 1.0f / ray.direction;
+	double tEnter = std::numeric_limits<double>::lowest();
+	double tExit = std::numeric_limits<double>::max();
+
+	for (int i = 0; i < 3; ++i)
+	{
+		double tMax;
+		double tMin;
+		if (ray.direction[i] == 0)
+		{
+			if (o[i] < pMin[i] || o[i] > pMax[i]) return false;
+		}
+		else
+		{
+			tMax = ((double)pMax[i] - o[i]) * invDir[i];
+			tMin = ((double)pMin[i] - o[i]) * invDir[i];
+			if (ray.direction[i] < 0) thrust::swap(tMax, tMin);
+			tEnter = tMin > tEnter ? tMin : tEnter;
+			tExit = tMax < tExit ? tMax : tExit;
+		}
+	}
+	t = tEnter;
+	return tEnter <= tExit && tEnter > 0;
+}
+
+__host__ __device__
 inline Bounds3 Union(const Bounds3& b, const glm::vec3& p)
 {
 	Bounds3 ret;
@@ -162,13 +195,15 @@ inline Bounds3 Union(const Bounds3& b1, const Bounds3& b2)
 	return ret;
 }
 
+
 class Triangle
 {
 public:
 	glm::vec3 v[3];
 	glm::vec3 n[3];
 	glm::vec2 tex[3];
-	float area;
+	//float area;
+	int objectIdx;
 	__host__ __device__
 		Triangle(const std::array<glm::vec3, 3>& _v, const std::array<glm::vec3, 3>& _n, const std::array<glm::vec2, 3>& _tex)
 	{
@@ -180,7 +215,7 @@ public:
 		}
 		glm::vec3 e1 = v[1] - v[0];
 		glm::vec3 e2 = v[2] - v[0];
-		area = glm::length(glm::cross(e1, e2)) * 0.5f;
+		//area = glm::length(glm::cross(e1, e2)) * 0.5f;
 	}
 
 	__host__ __device__
@@ -194,19 +229,20 @@ public:
 		}
 		glm::vec3 e1 = v[1] - v[0];
 		glm::vec3 e2 = v[2] - v[0];
-		area = glm::length(glm::cross(e1, e2)) * 0.5f;
+		//area = glm::length(glm::cross(e1, e2)) * 0.5f;
 	}
 
 	__host__ __device__
 		Triangle()
-		: v(), n(), tex(), area(0)
+		: v(), n(), tex()/*, area(0)*/
 	{ }
 
 	__host__ __device__
-		Bounds3 getBound() { return Union(Bounds3(v[0], v[1]), v[2]); }
+		Bounds3 getBound()const { return Union(Bounds3(v[0], v[1]), v[2]); }
 
+	// hitpoint = (1-u-v)*p[0] + u*p[1] + v*p[2]
 	__host__ __device__
-		bool getInterSect(const Ray& ray, float& t, float& u, float& v)
+		bool getInterSect(const Ray& ray, float& t, float& u, float& v) const
 	{
 		glm::vec3 e1 = this->v[1] - this->v[0];
 		glm::vec3 e2 = this->v[2] - this->v[0];

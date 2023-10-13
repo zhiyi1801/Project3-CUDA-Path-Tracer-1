@@ -161,7 +161,7 @@ __global__ void computeIntersections(
 		glm::vec3 tmp_intersect;
 		glm::vec3 tmp_normal;
 
-		BVHNode* bvhTree = dev_scene->dev_bvhTree;
+		GpuBVHNode* gpuBVH = dev_scene->dev_gpuBVH;
 		Triangle* triangles = dev_scene->dev_triangles;
 
 		// naive parse through global geoms
@@ -190,52 +190,63 @@ __global__ void computeIntersections(
 				normal = tmp_normal;
 			}
 		}
-
-		//for (int i = 0; i < dev_scene->tri_num; ++i)
-		//{
-		//	float u, v;
-		//	Triangle tempTri = dev_scene->dev_triangles[i];
-		//	bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
-		//	if (isHit && t_min > t)
-		//	{
-		//		t_min = t;
-		//		//MYTODO
-		//		hit_geom_index = 6;
-		//		intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
-		//		intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
-		//		normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
-		//	}
-		//}
-
+#if USE_BVH
 		int bvhIdx = 0;
 		int triangleId = -1;
-		int bvhNodeNum = 2 * dev_scene->tri_num - 1;
 		Triangle tempTri;
-		while (bvhIdx != -1 && bvhIdx < bvhNodeNum)
+		float tempT = FLT_MAX;
+		int offset = 0;
+#if USE_MTBVH
+		glm::vec3 dir = pathSegment.ray.direction;
+		offset = ((abs(dir[0]) > abs(dir[1])) && (abs(dir[0]) > abs(dir[2]))) ? 0 : (abs(dir[1]) > abs(dir[2]) ? 1 : 2);
+		offset = offset + (dir[offset] > 0 ? 0 : 3);
+		offset *= dev_scene->bvh_size;
+#endif
+		while (bvhIdx != -1)
 		{
-			if (!(bvhTree[bvhIdx].bBox.IntersectP(pathSegment.ray)))
+			if (!(gpuBVH[bvhIdx + offset].bBox.IntersectP(pathSegment.ray, tempT)) || tempT > t_min)
 			{
-				bvhIdx = bvhTree[bvhIdx].miss;
+				bvhIdx = gpuBVH[bvhIdx + offset].miss;
 				continue;
 			}
-			triangleId = bvhTree[bvhIdx].primitiveId;
-			tempTri = triangles[triangleId];
-			if (triangleId != -1)
+			//it indicates gpuBVH[bvhIdx] is a leaf node
+			if (gpuBVH[bvhIdx + offset].end - gpuBVH[bvhIdx + offset].start <= MAX_PRIM)
 			{
-				float u, v;
-				bool isHit = triangles[triangleId].getInterSect(pathSegment.ray, t, u, v);
-				if (isHit && t_min > t)
+				for (triangleId = gpuBVH[bvhIdx + offset].start; triangleId < gpuBVH[bvhIdx + offset].end; ++triangleId)
 				{
-					t_min = t;
-					//MYTODO
-					hit_geom_index = 6;
-					intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
-					intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
-					normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+					tempTri = triangles[triangleId];
+					float u, v;
+					bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
+					if (isHit && t_min > t)
+					{
+						t_min = t;
+						//MYTODO
+						hit_geom_index = 6;
+						intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
+						intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
+						normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+					}
 				}
 			}
-			bvhIdx++;
+			bvhIdx = gpuBVH[bvhIdx + offset].hit;
 		}
+#else
+		for (int i = 0; i < dev_scene->tri_num; ++i)
+		{
+			float u, v;
+			Triangle tempTri = dev_scene->dev_triangles[i];
+			bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
+			if (isHit && t_min > t)
+			{
+				t_min = t;
+				//MYTODO
+				hit_geom_index = 6;
+				intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
+				intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
+				normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+			}
+		}
+#endif
 
 		if (hit_geom_index == -1)
 		{

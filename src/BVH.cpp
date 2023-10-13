@@ -1,147 +1,237 @@
 #include "BVH.h"
 
-void BVHAccel::buildBVH(std::vector<Triangle>& t,
-	std::vector<BVHNode>& nodes,
-	SplitMethod splitMethod = SplitMethod::SAH)
+RecursiveBVHNode* BVHAccel::recursiveBuild(std::vector<Triangle>& t)
 {
-	switch (splitMethod)
+#if USE_SAH
+	return recursiveBuildSAH(t, 0, t.size());
+#else
+	return recursiveBuildNaive(t, 0, t.size());
+#endif // USE_SAH
+}
+
+//don't forget define destroy function !!!!!!!!!!!!!!!!!!!!!!!!!!
+RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const int start, const int end)
+{
+	struct BucketInfo
 	{
-		case SplitMethod::SAH: buildSAH(t, nodes); break;
-		case SplitMethod::NAIVE: buildNAIVE(t, nodes); break;
+		int num;
+		Bounds3 bBox;
+		BucketInfo() : num(0), bBox() {}
+	};
+	std::vector<BucketInfo> buckets;
+	buckets.resize(BUCKET_NUM);
+	RecursiveBVHNode* root = new RecursiveBVHNode();
+	root->start = start;
+	root->end = end;
+	for (int i = start; i < end; ++i)
+	{
+		root->bBox.Union(t[i].getBound());
+	}
+	if (end - start <= MAX_PRIM)
+	{
+		return root;
+	}
+
+	int maxExtent = root->bBox.MaxExtent();
+	std::sort(t.begin() + start, t.begin() + end, [maxExtent](const Triangle& lhs, const Triangle& rhs) {
+		return lhs.getBound().Centroid()[maxExtent] < rhs.getBound().Centroid()[maxExtent];
+		});
+
+	float Loss = FLT_MAX;
+	int mid = 0;
+	for (int i = start; i < end; ++i)
+	{
+		float offset = (t[i].getBound().Centroid()[maxExtent] - root->bBox.pMin[maxExtent]) / (root->bBox.pMax[maxExtent] - root->bBox.pMin[maxExtent]);
+		int bucketIdx = std::min(BUCKET_NUM - 1, int(floor(offset * BUCKET_NUM)));
+		buckets[bucketIdx].num += 1;
+		buckets[bucketIdx].bBox.Union(t[i].getBound());
+	}
+
+	for (int i = 0; i < BUCKET_NUM - 1; ++i)
+	{
+		Bounds3 bBoxL{}, bBoxR{};
+		int numL = 0, numR = 0;
+		float tempLoss;
+		for (int j = 0; j <= i; ++j)
+		{
+			bBoxL.Union(buckets[j].bBox);
+			numL += buckets[j].num;
+		}
+		for (int j = i + 1; j < BUCKET_NUM; ++j)
+		{
+			bBoxR.Union(buckets[j].bBox);
+			numR += buckets[j].num;
+		}
+		tempLoss = (numL * bBoxL.SurfaceArea() + numR * bBoxR.SurfaceArea()) / root->bBox.SurfaceArea();
+		if (tempLoss < Loss)
+		{
+			Loss = tempLoss;
+			mid = start + numL;
+		}
+	}
+	root->leftChild = recursiveBuildSAH(t, start, mid);
+	root->rightChild = recursiveBuildSAH(t, mid, end);
+
+	//root->bBox = Union(root->leftChild->bBox, root->rightChild->bBox);
+	return root;
+}
+
+RecursiveBVHNode* BVHAccel::recursiveBuildNaive(std::vector<Triangle>& t, const int start, const int end)
+{
+	RecursiveBVHNode* root = new RecursiveBVHNode();
+	root->start = start;
+	root->end = end;
+	for (int i = start; i < end; ++i)
+	{
+		root->bBox.Union(t[i].getBound());
+	}
+	if (end - start <= MAX_PRIM)
+	{
+		return root;
+	}
+
+	int maxExtent = root->bBox.MaxExtent();
+	std::sort(t.begin() + start, t.begin() + end, [maxExtent](const Triangle& lhs, const Triangle& rhs) {
+		return lhs.getBound().Centroid()[maxExtent] < rhs.getBound().Centroid()[maxExtent];
+		});
+	int mid = (start + end) / 2;
+	root->leftChild = recursiveBuildNaive(t, start, mid);
+	root->rightChild = recursiveBuildNaive(t, mid, end);
+
+	//root->bBox = Union(root->leftChild->bBox, root->rightChild->bBox);
+	return root;
+}
+
+
+int BVHAccel::recursiveBuildGpuBVHInfo(const RecursiveBVHNode* root, std::vector<GpuBVHNodeInfo>& bvhInfo, const int parent)
+{
+	if (parent == -1)
+	{
+		bvhInfo.clear();
+	}
+	if (!root)
+	{
+		return -1;
+	}
+
+	GpuBVHNodeInfo nodeInfo{};
+	nodeInfo.BVHNode = root;
+	nodeInfo.parent = parent;
+	const int currentID = bvhInfo.size();
+	bvhInfo.push_back(nodeInfo);
+	if (root->leftChild)
+	{
+		assert(root->rightChild != nullptr);
+		int left = recursiveBuildGpuBVHInfo(root->leftChild, bvhInfo, currentID);
+		int right = recursiveBuildGpuBVHInfo(root->rightChild, bvhInfo, currentID);
+		bvhInfo[currentID].left = left;
+		bvhInfo[currentID].right = right;
+	}
+	
+	return currentID;
+}
+
+void BVHAccel::buildGpuBVH(const std::vector<GpuBVHNodeInfo>& bvhInfo, std::vector<GpuBVHNode>& bvh)
+{
+	bvh.resize(bvhInfo.size());
+	for (int i = 0; i < bvhInfo.size(); ++i)
+	{
+		bvh[i].bBox = bvhInfo[i].BVHNode->bBox;
+		bvh[i].start = bvhInfo[i].BVHNode->start;
+		bvh[i].end = bvhInfo[i].BVHNode->end;
+
+		//since <<recursiveBuildGpuBVHInfo>> is a preorder traversal build
+		bvh[i].hit = i + 1;
+		if (i == bvhInfo.size() - 1) bvh[i].hit = -1;
+		int parent = bvhInfo[i].parent;
+
+		// if i is the left child of parent, miss index is the right child of parent
+		if (i == 0)
+		{
+			bvh[i].miss = -1;
+		}
+		else if (i == bvhInfo[parent].left)
+		{
+			bvh[i].miss = bvhInfo[parent].right;
+		}
+		// if i is the right child of parent, miss link is parent's miss link (there is a fact that parent < i so bvh[parent].miss is assigned)
+		else
+		{
+			bvh[i].miss = bvh[parent].miss;
+		}
 	}
 }
 
-void BVHAccel::buildSAH(std::vector<Triangle>& t,
-	std::vector<BVHNode>& nodes)
+void BVHAccel::buildGpuMTBVH(const std::vector<GpuBVHNodeInfo>& bvhInfo, std::vector<GpuBVHNode>& MTbvh)
 {
-	int primNum = t.size();
-	int bvhNodeNum = 2 * primNum - 1;
-	int maxDepth = int(ceil(log2f(bvhNodeNum)));
+	int bvhSize = bvhInfo.size();
+	MTbvh.resize(6 * bvhSize);
+	//the order of 6 direction is [x,y,z,-x,-y,-z]
+	for (int dir = 0; dir < 6; ++dir)
+	{
+		int offset = dir * bvhSize;
+		int axis = dir % 3;
+		int sign = (dir < 3 ? 1 : -1);
+		for (int i = 0; i < bvhSize; ++i)
+		{
+			MTbvh[offset + i].bBox = bvhInfo[i].BVHNode->bBox;
+			MTbvh[offset + i].start = bvhInfo[i].BVHNode->start;
+			MTbvh[offset + i].end = bvhInfo[i].BVHNode->end;
+			int left = bvhInfo[i].left, right = bvhInfo[i].right;
+			int parent = bvhInfo[i].parent;
 
-	nodes.resize(bvhNodeNum);
+			//assign hit link
+			if (left != -1)
+			{
+				if ((bvhInfo[left].BVHNode->bBox.Centroid()[axis] * sign > bvhInfo[right].BVHNode->bBox.Centroid()[axis] * sign))
+				{
+					std::swap(left, right);
+				}
+				MTbvh[offset + i].hit = left;
+			}
+			else
+			{
+				if (parent == -1)
+				{
+					MTbvh[offset + i].hit = -1;
+				}
+				else if (i == MTbvh[offset + parent].hit)
+				{
+					MTbvh[offset + i].hit = (i == bvhInfo[parent].left) ? bvhInfo[parent].right : bvhInfo[parent].left;
+				}
+
+				else
+				{
+					MTbvh[offset + i].hit = MTbvh[offset + parent].miss;
+				}
+			}
+
+			//assign miss link
+			if (i == 0)
+			{
+				MTbvh[offset + i].miss = -1;
+			}
+			else if (i == MTbvh[offset + parent].hit)
+			{
+				MTbvh[offset + i].miss = (i == bvhInfo[parent].left) ? bvhInfo[parent].right : bvhInfo[parent].left;
+			}
+			else
+			{
+				MTbvh[offset + i].miss = MTbvh[offset + parent].miss;
+			}
+		}
+	}
 }
 
-void BVHAccel::buildNAIVE(std::vector<Triangle>& t,
-	std::vector<BVHNode>& nodes)
+void RecursiveBVHNode::destroy()
 {
-	int primNum = t.size();
-	int bvhNodeNum = 2 * primNum - 1;
-	if (bvhNodeNum == 0) return;
-	nodes.resize(bvhNodeNum);
+	if (!this) return;
 
-	int maxPerfectDepth = 1;
-	while (bvhNodeNum >>= 1) { ++maxPerfectDepth; }
-	bvhNodeNum = 2 * primNum - 1;
-	int lastLayerNum = bvhNodeNum;
-	if ((1 << maxPerfectDepth) - 1 != bvhNodeNum)
+	if (this->leftChild)
 	{
-		--maxPerfectDepth;
+		assert(this->rightChild != nullptr);
+		this->leftChild->destroy();
+		this->rightChild->destroy();
 	}
-	lastLayerNum -= ((1 << maxPerfectDepth) - 1);
-	--maxPerfectDepth;
-
-	//for (int i = 0; i < primNum; ++i)
-	//{
-	//	bboxes[0].Union(t[i].getBound());
-	//}
-
-	std::vector<BVHBuildInfo> infoStack(bvhNodeNum);
-	int top = 0;
-
-	//{start, end, index, depth, offset, preMiss, siblingIdx} [start,end)
-	infoStack[top++] = { 0,primNum,0,0,0,-1,-1};
-
-	while (top)
-	{
-		BVHBuildInfo info = infoStack[--top];
-		int nodeId = info.idx;
-		Bounds3& bBox = nodes[nodeId].bBox;
-		bBox = Bounds3();
-		int start = info.start, end = info.end, depth = info.depth, offset = info.offset;
-		int lastLayerMax = (1 << (maxPerfectDepth + 1));
-		int lastLayerStartIdx = lastLayerMax / (1 << depth) * offset;
-		int miss = -1;
-		for (int i = start; i < end; ++i)
-		{
-			bBox.Union(t[i].getBound());
-		}
-
-		if (nodeId == 0) { miss = -1; }
-		else if (!(offset & 1))
-		{
-			//miss = nodeId
-			//	+ (1 << (maxPerfectDepth - depth)) - 1
-			//	+ std::max(std::min(1 << (maxPerfectDepth - depth), lastLayerNum - lastLayerStartIdx), 0);
-			miss = nodeId
-				+ (1 << (maxPerfectDepth - depth + 1)) - 2
-				+ std::max(std::min(1 << (maxPerfectDepth - depth + 1), lastLayerNum - lastLayerStartIdx), 0)
-				+ 1;
-			assert(miss == info.siblingIdx);
-			miss = info.siblingIdx;
-		}
-		//else if (nodeId == 0)
-		//{
-		//	miss = -1;
-		//}
-		else
-		{
-			miss = info.preMiss;
-		}
-
-		assert(miss < bvhNodeNum);
-		nodes[nodeId].miss = miss;
-		nodes[nodeId].primitiveId = -1;
-
-		if (end - start == 1)
-		{
-			nodes[nodeId].primitiveId = start;
-		}
-
-		else if (end - start == 2)
-		{
-			assert(end <= primNum);
-			int leftChild = nodeId + 1;
-			int rightChild = nodeId
-					+ (1 << (maxPerfectDepth - depth)) - 1
-					+ std::max(std::min(1 << (maxPerfectDepth - depth), lastLayerNum - lastLayerStartIdx), 0)
-					+1;
-
-			nodes[leftChild].primitiveId = start;
-			nodes[leftChild].miss = rightChild;
-			nodes[leftChild].bBox = t[start].getBound();
-
-			nodes[rightChild].primitiveId = start + 1;
-			nodes[rightChild].miss = miss;
-			nodes[rightChild].bBox = t[start + 1].getBound();
-		}
-
-		else
-		{
-			int tNum = end - start;
-			int log2tNum = log2(tNum);
-			//int leftTNum = (1 << log2tNum);
-			int lastLayerLStart = lastLayerStartIdx;
-			//e.g. 12 -> [8,4], 11 -> [7,4], 13 -> [8,5]
-			int leftTNum = (1 << (maxPerfectDepth - depth - 1)) + std::max(std::min((lastLayerNum - lastLayerStartIdx)/2, 1 << (maxPerfectDepth - depth - 1)), 0);
-
-			if (leftTNum == tNum) { leftTNum >>= 1; }
-
-			int rightTNum = tNum - leftTNum;
-			int leftStart = start, leftEnd = start + leftTNum,
-				rightStart = leftEnd, rightEnd = end;
-			int leftIdx = nodeId + 1,
-				rightIdx = nodeId
-				+ (1 << (maxPerfectDepth - depth)) - 1
-				+ std::max(std::min(1 << (maxPerfectDepth - depth), lastLayerNum - lastLayerStartIdx), 0)
-				+ 1;
-			int maxIdx = bBox.MaxExtent();
-			// sort the t[start] to t[end] by index "maxIdx" using lambda func
-			std::sort(t.begin() + start, t.begin() + end, [maxIdx](Triangle lhs, Triangle rhs) {
-				return lhs.getBound().Centroid()[maxIdx] < rhs.getBound().Centroid()[maxIdx];
-				});
-			//{start, end, index, depth, offset, preMiss, siblingIdx} [start,end)
-			infoStack[top++] = { rightStart, rightEnd, rightIdx, depth + 1, 2 * offset + 1, miss, leftIdx };
-			infoStack[top++] = { leftStart, leftEnd, leftIdx, depth + 1, 2 * offset, miss, rightIdx };
-		}
-	}
+	delete this;
 }

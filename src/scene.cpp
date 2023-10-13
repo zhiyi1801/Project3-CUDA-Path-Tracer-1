@@ -260,11 +260,22 @@ void Scene::setDevData()
         }
     }
 
-    this->bvhConstructor.buildBVH(this->triangles, this->bvhNodes, BVHAccel::SplitMethod::NAIVE);
+
+    this->bvhRoot = this->bvhConstructor.recursiveBuild(this->triangles);
+    this->bvhConstructor.recursiveBuildGpuBVHInfo(bvhRoot, this->gpuBVHNodeInfos);
+#if USE_MTBVH
+    this->bvhConstructor.buildGpuMTBVH(this->gpuBVHNodeInfos, this->gpuBVHNodes);
+#else
+    this->bvhConstructor.buildGpuBVH(this->gpuBVHNodeInfos, this->gpuBVHNodes);
+#endif
+
     this->tempDevScene.initiate(*this);
     cudaMalloc(&dev_scene, sizeof(DevScene));
     cudaMemcpy(dev_scene, &tempDevScene, sizeof(DevScene), cudaMemcpyHostToDevice);
     checkCUDAError("dev_scene");
+
+    bvhRoot->destroy();
+    gpuBVHNodeInfos.clear();
 }
 
 MeshData* Resource::loadObj(const string& filename)
@@ -281,7 +292,7 @@ MeshData* Resource::loadObj(const string& filename)
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::string warn, err;
-    model->area = 0;
+    //model->area = 0;
 
     std::cout << "---Loading model " << filename << "---" << std::endl;
     if (!tinyobj::LoadObj(&attrib, &shapes, nullptr, &warn, &err, filename.c_str()))
@@ -329,7 +340,7 @@ MeshData* Resource::loadObj(const string& filename)
                 }
                 Triangle tri(_v, _n, _tex);
                 model->triangles.push_back(tri);
-                model->area += tri.area;
+                //model->area += tri.area;
                 for (int j = 0; j < 3; ++j)
                 {
                     min_vert = glm::min(min_vert, tri.v[i]);
@@ -339,7 +350,7 @@ MeshData* Resource::loadObj(const string& filename)
             index_offset += fn;
         }
     }
-    model->boundingBox = Bounds3(min_vert, max_vert);
+    //model->boundingBox = Bounds3(min_vert, max_vert);
     Resource::meshDataPool.push_back(model);
     Resource::meshDataIdx[filename] = meshCount++;
     //protoId = meshCount++;
@@ -364,17 +375,18 @@ void Resource::clear()
 void DevScene::initiate(const Scene& scene)
 {
     tri_num = scene.triangles.size();
+    bvh_size = scene.gpuBVHNodeInfos.size();
     cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
     cudaMemcpy(dev_triangles, scene.triangles.data(), sizeof(Triangle) * scene.triangles.size(), cudaMemcpyHostToDevice);
     checkCUDAError("DevScene initiate::triangles");
 
-    cudaMalloc(&dev_bvhTree, sizeof(BVHNode) * scene.bvhNodes.size());
-    cudaMemcpy(dev_bvhTree, scene.bvhNodes.data(), sizeof(BVHNode) * scene.bvhNodes.size(), cudaMemcpyHostToDevice);
-    checkCUDAError("DevScene initiate::bvh tree");
+    cudaMalloc(&dev_gpuBVH, sizeof(GpuBVHNode) * scene.gpuBVHNodes.size());
+    cudaMemcpy(dev_gpuBVH, scene.gpuBVHNodes.data(), sizeof(GpuBVHNode) * scene.gpuBVHNodes.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::gpu bvh tree");
 }
 
 void DevScene::destroy()
 {
     cudaSafeFree(dev_triangles);
-    cudaSafeFree(dev_bvhTree);
+    cudaFree(dev_gpuBVH);
 }
