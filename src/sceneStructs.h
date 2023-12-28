@@ -28,6 +28,15 @@ struct Ray {
     }
 };
 
+struct GPUGeom
+{
+    enum GeomType type;
+    int materialid;
+    glm::mat4 transform;
+    GPUGeom(GeomType _type, int _materialid, const glm::mat4 _transform) :
+        type(_type), materialid(_materialid), transform(_transform) {}
+};
+
 struct Geom {
     enum GeomType type;
     int materialid;

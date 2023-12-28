@@ -45,6 +45,7 @@ public:
     void clear();
 
     std::vector<Geom> geoms;
+    std::vector<GPUGeom> gpuGeoms;
     std::vector<Material> materials;
     std::vector<Triangle> triangles;
 
@@ -63,7 +64,7 @@ class MeshData;
 
 namespace Resource
 {
-    MeshData* loadObj(const string& filename);
+    MeshData* loadObj(const string& filename, const int _geomIdx);
     void clear();
 
     extern int meshCount;

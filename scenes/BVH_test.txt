@@ -109,11 +109,11 @@ SCALE       .01 10 10
 
 // Sphere
 OBJECT 6
-../scenes/model/sphere.obj
+../scenes/model/bunny.obj
 material 4
 TRANS       -2 4 -1
 ROTAT       0 0 0
-SCALE       0.3 0.3 0.3
+SCALE       1 1 1
 
 // Sphere
 OBJECT 7

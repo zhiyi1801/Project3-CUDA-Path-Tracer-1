@@ -90,7 +90,7 @@ int Scene::loadGeom(string objectid) {
             {
                 cout << "---Loading obj file " << line << "---" << endl;
                 newGeom.type = OBJ;
-                newGeom.mesh = Resource::loadObj(line);
+                newGeom.mesh = Resource::loadObj(line, geoms.size());
             }
         }
 
@@ -246,6 +246,8 @@ void Scene::setDevData()
 {
     for (const auto& g : geoms)
     {
+        GPUGeom gpuGeom(g.type, g.materialid, g.transform);
+        gpuGeoms.push_back(gpuGeom);
         if (g.type != OBJ) continue;
         for (const auto& t : g.mesh->triangles)
         {
@@ -256,6 +258,7 @@ void Scene::setDevData()
                 temp_t.n[i] = glm::normalize(glm::vec3(g.invTranspose * glm::vec4(t.n[i], 0.0f)));
                 temp_t.tex[i] = t.tex[i];
             }
+            temp_t.geomIdx = t.geomIdx;
             triangles.push_back(temp_t);
         }
     }
@@ -278,12 +281,13 @@ void Scene::setDevData()
     gpuBVHNodeInfos.clear();
 }
 
-MeshData* Resource::loadObj(const string& filename)
+MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
 {
     auto exist = meshDataIdx.find(filename);
     if (exist != meshDataIdx.end())
     {
         //protoId = exist->second;
+        std::cout << "---obj file existed " << filename << "---" << std::endl;
         return meshDataPool[exist->second];
     }
 
@@ -338,7 +342,7 @@ MeshData* Resource::loadObj(const string& filename)
                         * ((glm::vec2*)attrib.texcoords.data() + idx1.texcoord_index),
                         * ((glm::vec2*)attrib.texcoords.data() + idx2.texcoord_index) };
                 }
-                Triangle tri(_v, _n, _tex);
+                Triangle tri(_v, _n, _tex, _geomIdx);
                 model->triangles.push_back(tri);
                 //model->area += tri.area;
                 for (int j = 0; j < 3; ++j)

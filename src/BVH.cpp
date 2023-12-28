@@ -69,6 +69,7 @@ RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const in
 			mid = start + numL;
 		}
 	}
+	assert(mid >= start && mid <= end);
 	root->leftChild = recursiveBuildSAH(t, start, mid);
 	root->rightChild = recursiveBuildSAH(t, mid, end);
 

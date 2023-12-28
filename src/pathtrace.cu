@@ -220,8 +220,7 @@ __global__ void computeIntersections(
 					if (isHit && t_min > t)
 					{
 						t_min = t;
-						//MYTODO
-						hit_geom_index = 6;
+						hit_geom_index = tempTri.geomIdx;
 						intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
 						intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
 						normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
@@ -240,7 +239,7 @@ __global__ void computeIntersections(
 			{
 				t_min = t;
 				//MYTODO
-				hit_geom_index = 6;
+				hit_geom_index = tempTri.geomIdx;
 				intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
 				intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
 				normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];

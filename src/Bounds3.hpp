@@ -203,9 +203,9 @@ public:
 	glm::vec3 n[3];
 	glm::vec2 tex[3];
 	//float area;
-	int objectIdx;
+	int geomIdx;
 	__host__ __device__
-		Triangle(const std::array<glm::vec3, 3>& _v, const std::array<glm::vec3, 3>& _n, const std::array<glm::vec2, 3>& _tex)
+		Triangle(const std::array<glm::vec3, 3>& _v, const std::array<glm::vec3, 3>& _n, const std::array<glm::vec2, 3>& _tex, const int _geomIdx = -1)
 	{
 		for (int i = 0; i < 3; ++i)
 		{
@@ -215,11 +215,12 @@ public:
 		}
 		glm::vec3 e1 = v[1] - v[0];
 		glm::vec3 e2 = v[2] - v[0];
+		geomIdx = _geomIdx;
 		//area = glm::length(glm::cross(e1, e2)) * 0.5f;
 	}
 
 	__host__ __device__
-		Triangle(const glm::vec3* _v, const glm::vec3* _n, const glm::vec2* _tex)
+		Triangle(const glm::vec3* _v, const glm::vec3* _n, const glm::vec2* _tex, const int _geomIdx = -1)
 	{
 		for (int i = 0; i < 3; ++i)
 		{
@@ -229,12 +230,13 @@ public:
 		}
 		glm::vec3 e1 = v[1] - v[0];
 		glm::vec3 e2 = v[2] - v[0];
+		geomIdx = _geomIdx;
 		//area = glm::length(glm::cross(e1, e2)) * 0.5f;
 	}
 
 	__host__ __device__
 		Triangle()
-		: v(), n(), tex()/*, area(0)*/
+		: v(), n(), tex(), geomIdx(-1)/*, area(0)*/
 	{ }
 
 	__host__ __device__
