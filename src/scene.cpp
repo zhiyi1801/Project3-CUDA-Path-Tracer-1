@@ -4,6 +4,13 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
 
+const std::map<std::string, Material::Type> materialTypeMap{
+    {"Lambertian", Material::Type::Lambertian},
+    {"MetallicWorkflow", Material::Type::MetallicWorkflow},
+    {"Dielectric", Material::Type::Dielectric},
+    {"Light", Material::Type::Light}
+};
+
 void checkCUDAErrorFn(const char* msg, const char* file, int line) {
 #if ERRORCHECK
     cudaDeviceSynchronize();
@@ -198,6 +205,11 @@ int Scene::loadCamera() {
     return 1;
 }
 
+/// <summary>
+/// material has TYPE, ALBEDO, METALLIC, ROUGHNESS, IOR(index of refraction)
+/// </summary>
+/// <param name="materialid"></param>
+/// <returns></returns>
 int Scene::loadMaterial(string materialid) {
     int id = atoi(materialid.c_str());
     if (id != materials.size()) {
@@ -209,32 +221,32 @@ int Scene::loadMaterial(string materialid) {
         Material newMaterial;
 
         //load static properties
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 5; i++) {
             string line;
             utilityCore::safeGetline(fp_in, line);
             vector<string> tokens = utilityCore::tokenizeString(line);
-            if (strcmp(tokens[0].c_str(), "RGB") == 0) {
-                glm::vec3 color(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
-                newMaterial.color = color;
+            if (strcmp(tokens[0].c_str(), "TYPE") == 0) {
+                auto it = materialTypeMap.find(tokens[1]);
+                if (it != materialTypeMap.end())
+                {
+                    newMaterial.type = it->second;
+                }
+                else
+                {
+                    cout << "TYPE ERROR " << id  << endl;
+                }
             }
-            else if (strcmp(tokens[0].c_str(), "SPECEX") == 0) {
-                newMaterial.specular.exponent = atof(tokens[1].c_str());
+            else if (strcmp(tokens[0].c_str(), "ALBEDO") == 0) {
+                newMaterial.albedo = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
             }
-            else if (strcmp(tokens[0].c_str(), "SPECRGB") == 0) {
-                glm::vec3 specColor(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
-                newMaterial.specular.color = specColor;
+            else if (strcmp(tokens[0].c_str(), "METALLIC") == 0) {
+                newMaterial.metallic = atof(tokens[1].c_str());
             }
-            else if (strcmp(tokens[0].c_str(), "REFL") == 0) {
-                newMaterial.hasReflective = atof(tokens[1].c_str());
+            else if (strcmp(tokens[0].c_str(), "ROUGHNESS") == 0) {
+                newMaterial.roughness = atof(tokens[1].c_str());
             }
-            else if (strcmp(tokens[0].c_str(), "REFR") == 0) {
-                newMaterial.hasRefractive = atof(tokens[1].c_str());
-            }
-            else if (strcmp(tokens[0].c_str(), "REFRIOR") == 0) {
-                newMaterial.indexOfRefraction = atof(tokens[1].c_str());
-            }
-            else if (strcmp(tokens[0].c_str(), "EMITTANCE") == 0) {
-                newMaterial.emittance = atof(tokens[1].c_str());
+            else if (strcmp(tokens[0].c_str(), "IOR") == 0) {
+                newMaterial.ior = atof(tokens[1].c_str());
             }
         }
         materials.push_back(newMaterial);
@@ -258,7 +270,7 @@ void Scene::setDevData()
                 temp_t.n[i] = glm::normalize(glm::vec3(g.invTranspose * glm::vec4(t.n[i], 0.0f)));
                 temp_t.tex[i] = t.tex[i];
             }
-            temp_t.geomIdx = t.geomIdx;
+            temp_t.geomIdx = gpuGeoms.size() - 1;
             triangles.push_back(temp_t);
         }
     }

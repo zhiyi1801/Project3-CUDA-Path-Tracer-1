@@ -15,6 +15,7 @@
 #include "cudautils.hpp"
 #include "BVH.h";
 #include "tiny_obj_loader.hpp"
+#include "material.h"
 
 using namespace std;
 

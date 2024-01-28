@@ -123,8 +123,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		// TODO: implement antialiasing by jittering the ray
 		segment.ray.direction = glm::normalize(cam.view
-			- cam.right * cam.pixelLength.x * (float)(x + u01(rng) - (float)cam.resolution.x * 0.5f)
-			- cam.up * cam.pixelLength.y * (float)(y + u01(rng) - (float)cam.resolution.y * 0.5f));
+			- cam.right * cam.pixelLength.x * (float)(x + (u01(rng) - 0.5) - (float)cam.resolution.x * 0.5f)
+			- cam.up * cam.pixelLength.y * (float)(y + (u01(rng) - 0.5) - (float)cam.resolution.y * 0.5f));
 
 		segment.pixelIndex = index;
 		segment.remainingBounces = traceDepth;
@@ -255,6 +255,7 @@ __global__ void computeIntersections(
 		{
 			//The ray hits something
 			intersections[path_index].t = t_min;
+			intersections[path_index].interPoint = intersect_point;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
 			intersections[path_index].surfaceNormal = normal;
 		}
@@ -279,35 +280,61 @@ __global__ void shadeFakeMaterial(
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	volatile int textID = pathSegments[idx].pixelIndex;
+	volatile float c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
+	volatile float o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
+	volatile float d1 = pathSegments[idx].ray.direction.x, d2 = pathSegments[idx].ray.direction.y, d3 = pathSegments[idx].ray.direction.z;
+	volatile float n1 = shadeableIntersections[idx].surfaceNormal.x, n2 = shadeableIntersections[idx].surfaceNormal.y, n3 = shadeableIntersections[idx].surfaceNormal.z;
+	volatile float p1 = shadeableIntersections[idx].interPoint.x, p2 = shadeableIntersections[idx].interPoint.y, p3 = shadeableIntersections[idx].interPoint.z;
+	volatile float off1 = p1, off2 = p2, off3 = p3;
 	if (idx < num_paths)
 	{
-		volatile int pixelIdx = pathSegments[idx].pixelIndex;
 		ShadeableIntersection intersection = shadeableIntersections[idx];
 		if (intersection.t > 0.0f) { // if the intersection exists...
 		  // Set up the RNG
 		  // LOOK: this is how you use thrust's RNG! Please look at
 		  // makeSeededRandomEngine as well.
-			thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, 0);
-			thrust::uniform_real_distribution<float> u01(0, 1);
+			Sampler rng = makeSeededRandomEngine(iter, idx, 0);
 
-			Material material = materials[intersection.materialId];
-			glm::vec3 materialColor = material.color;
-
+			scatter_record srec;
+			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng);
+			Material::Type mType = materials[intersection.materialId].type;
 			// If the material indicates that the object was a light, "light" the ray
-			if (material.emittance > 0.0f) {
-				pathSegments[idx].color *= (materialColor * material.emittance);
+			if (!ifScatter) {
+				pathSegments[idx].color *= (srec.bsdf / srec.pdf);
 				pathSegments[idx].remainingBounces = 0;
 			}
 			// Otherwise, do some pseudo-lighting computation. This is actually more
 			// like what you would expect from shading in a rasterizer like OpenGL.
 			// TODO: replace this! you should be able to start with basically a one-liner
 			else {
-				scatterRay(pathSegments[idx], intersection.t * pathSegments[idx].ray.direction + pathSegments[idx].ray.origin, intersection.surfaceNormal, material, rng);
-				if (--(pathSegments[idx].remainingBounces) == 0) pathSegments[idx].color = glm::vec3(0.0f);
+				glm::vec3 offsetDir;
+				volatile float coswi = glm::dot(srec.dir, intersection.surfaceNormal);
+				if (coswi > 0)
+				{
+					offsetDir = intersection.surfaceNormal;
+				}
+				else
+				{
+					offsetDir = -intersection.surfaceNormal;
+				}
+				off1 = offsetDir.x, off2 = offsetDir.y, off3 = offsetDir.z;
+				pathSegments[idx].ray.direction = srec.dir;
+				pathSegments[idx].ray.origin = intersection.interPoint + 
+												(mType == Material::Type::Dielectric ? 100 : 1) * EPSILON * offsetDir;
+				if (!srec.delta)
+				{
+					pathSegments[idx].color *= (srec.bsdf * glm::dot(srec.dir, intersection.surfaceNormal) / srec.pdf);
+				}
+				else
+				{
+					pathSegments[idx].color *= srec.bsdf;
+				}
 
-				//float lightTerm = glm::dot(intersection.surfaceNormal, glm::vec3(0.0f, 1.0f, .0f));
-				//pathSegments[idx].color *= (materialColor * lightTerm) * 0.3f + ((1.0f - intersection.t * 0.02f) * materialColor) * 0.7f;
-				//pathSegments[idx].color *= u01(rng); // apply some noise because why not
+				if (--(pathSegments[idx].remainingBounces) == 0)
+				{
+					pathSegments[idx].color = glm::vec3(0.0f);
+				}
 			}
 			// If there was no intersection, color the ray black.
 			// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
@@ -320,6 +347,9 @@ __global__ void shadeFakeMaterial(
 			pathSegments[idx].remainingBounces = 0;
 		}
 	}
+
+	volatile float c1 = pathSegments[idx].color.x, c2 = pathSegments[idx].color.y, c3 = pathSegments[idx].color.z;
+	volatile float a1 = 2;
 }
 
 // Add the current iteration's output to the overall image
@@ -401,7 +431,6 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 
 	// --- PathSegment Tracing Stage ---
 	// Shoot ray into scene, bounce between objects, push shading chunks
-
 	bool iterationComplete = false;
 	while (!iterationComplete) {
 

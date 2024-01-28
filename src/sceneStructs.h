@@ -6,11 +6,6 @@
 #include "glm/glm.hpp"
 #include "utilities.h"
 
-#define BACKGROUND_COLOR (glm::vec3(0.0f))
-
-#define USE_BVH 1
-#define USE_SAH 1
-#define USE_MTBVH 1
 
 class MeshData;
 enum GeomType {
@@ -51,17 +46,17 @@ struct Geom {
     //int protoId;
 };
 
-struct Material {
-    glm::vec3 color;
-    struct {
-        float exponent;
-        glm::vec3 color;
-    } specular;
-    float hasReflective;
-    float hasRefractive;
-    float indexOfRefraction;
-    float emittance;
-};
+//struct Material {
+//    glm::vec3 color;
+//    struct {
+//        float exponent;
+//        glm::vec3 color;
+//    } specular;
+//    float hasReflective;
+//    float hasRefractive;
+//    float indexOfRefraction;
+//    float emittance;
+//};
 
 struct Camera {
     glm::ivec2 resolution;
@@ -95,5 +90,6 @@ struct PathSegment {
 struct ShadeableIntersection {
   float t;
   glm::vec3 surfaceNormal;
+  glm::vec3 interPoint;
   int materialId;
 };

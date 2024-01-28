@@ -3,7 +3,7 @@
 #define BVH_H
 
 #define MAX_PRIM 100
-#define BUCKET_NUM 12
+#define BUCKET_NUM 20
 
 #include"utilities.h"
 #include "Bounds3.hpp"

@@ -240,6 +240,6 @@ void scatterRay(
     //    }
     //}
     pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
-    pathSegment.color *= m.color;
+    pathSegment.color *= m.albedo;
     pathSegment.ray.origin = intersect + 0.001f * pathSegment.ray.direction;
 }
