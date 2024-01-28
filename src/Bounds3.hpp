@@ -174,7 +174,7 @@ inline bool Bounds3::IntersectP(const Ray& ray, float& t)
 		}
 	}
 	t = tEnter;
-	return tEnter <= tExit && tEnter > 0;
+	return tEnter <= tExit && tExit > 0;
 }
 
 __host__ __device__

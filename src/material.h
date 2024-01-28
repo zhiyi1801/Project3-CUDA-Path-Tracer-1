@@ -62,7 +62,15 @@ public:
     __host__ __device__ void dielectricScatterSample(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler)
     {
         float ior1, ior2;
-        glm::dot(wo, n) < 0 ? (ior1 = 1, ior2 = ior) : (ior2 = 1, ior1 = ior);
+
+        if (glm::dot(wo, n) < 0)
+        {
+            (ior1 = 1, ior2 = ior);
+        }
+        else
+        {
+            (ior2 = 1, ior1 = ior);
+        }
 
         float FresnelRefl = math::FresnelMaxwell(abs(glm::dot(wo, n)), ior1, ior2);
 

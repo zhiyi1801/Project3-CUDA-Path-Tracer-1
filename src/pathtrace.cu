@@ -146,7 +146,6 @@ __global__ void computeIntersections(
 )
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
-
 	if (path_index < num_paths)
 	{
 		PathSegment pathSegment = pathSegments[path_index];
@@ -257,7 +256,7 @@ __global__ void computeIntersections(
 			intersections[path_index].t = t_min;
 			intersections[path_index].interPoint = intersect_point;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
-			intersections[path_index].surfaceNormal = normal;
+			intersections[path_index].surfaceNormal = glm::normalize(normal);
 		}
 	}
 }
@@ -280,13 +279,13 @@ __global__ void shadeFakeMaterial(
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	volatile int textID = pathSegments[idx].pixelIndex;
-	volatile float c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
-	volatile float o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
-	volatile float d1 = pathSegments[idx].ray.direction.x, d2 = pathSegments[idx].ray.direction.y, d3 = pathSegments[idx].ray.direction.z;
-	volatile float n1 = shadeableIntersections[idx].surfaceNormal.x, n2 = shadeableIntersections[idx].surfaceNormal.y, n3 = shadeableIntersections[idx].surfaceNormal.z;
-	volatile float p1 = shadeableIntersections[idx].interPoint.x, p2 = shadeableIntersections[idx].interPoint.y, p3 = shadeableIntersections[idx].interPoint.z;
-	volatile float off1 = p1, off2 = p2, off3 = p3;
+	//volatile int textID = pathSegments[idx].pixelIndex;
+	//volatile float c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
+	//volatile float o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
+	//volatile float d1 = pathSegments[idx].ray.direction.x, d2 = pathSegments[idx].ray.direction.y, d3 = pathSegments[idx].ray.direction.z;
+	//volatile float n1 = shadeableIntersections[idx].surfaceNormal.x, n2 = shadeableIntersections[idx].surfaceNormal.y, n3 = shadeableIntersections[idx].surfaceNormal.z;
+	//volatile float p1 = shadeableIntersections[idx].interPoint.x, p2 = shadeableIntersections[idx].interPoint.y, p3 = shadeableIntersections[idx].interPoint.z;
+	//volatile float off1 = p1, off2 = p2, off3 = p3, testt = shadeableIntersections[idx].t;
 	if (idx < num_paths)
 	{
 		ShadeableIntersection intersection = shadeableIntersections[idx];
@@ -308,20 +307,10 @@ __global__ void shadeFakeMaterial(
 			// like what you would expect from shading in a rasterizer like OpenGL.
 			// TODO: replace this! you should be able to start with basically a one-liner
 			else {
-				glm::vec3 offsetDir;
-				volatile float coswi = glm::dot(srec.dir, intersection.surfaceNormal);
-				if (coswi > 0)
-				{
-					offsetDir = intersection.surfaceNormal;
-				}
-				else
-				{
-					offsetDir = -intersection.surfaceNormal;
-				}
-				off1 = offsetDir.x, off2 = offsetDir.y, off3 = offsetDir.z;
+				glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;
 				pathSegments[idx].ray.direction = srec.dir;
 				pathSegments[idx].ray.origin = intersection.interPoint + 
-												(mType == Material::Type::Dielectric ? 100 : 1) * EPSILON * offsetDir;
+												(mType == Material::Type::Dielectric ? 10 : 1) * EPSILON * offsetDir;
 				if (!srec.delta)
 				{
 					pathSegments[idx].color *= (srec.bsdf * glm::dot(srec.dir, intersection.surfaceNormal) / srec.pdf);
@@ -342,14 +331,10 @@ __global__ void shadeFakeMaterial(
 			// This can be useful for post-processing and image compositing.
 		}
 		else {
-			//pathSegments[idx].color = glm::vec3(0.0f);
 			pathSegments[idx].color *= 0;
 			pathSegments[idx].remainingBounces = 0;
 		}
 	}
-
-	volatile float c1 = pathSegments[idx].color.x, c2 = pathSegments[idx].color.y, c3 = pathSegments[idx].color.z;
-	volatile float a1 = 2;
 }
 
 // Add the current iteration's output to the overall image

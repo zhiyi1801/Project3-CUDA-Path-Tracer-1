@@ -164,8 +164,6 @@ namespace math
         glm::vec3 r_para = -1 * sqrt(1 - lengthSquared(r_perp)) * normal;
         glm::vec3 r = r_para + r_perp;
 
-        volatile float n1 = n.x, n2 = n.y, n3 = n.z, wo1 = wo.x, wo2 = wo.y, wo3 = wo.z, wi1 = r.x, wi2 = r.y, wi3 = r.z;
-
         return r_perp + r_para;
     }
 
@@ -176,10 +174,10 @@ namespace math
 
     __host__ __device__  inline float FresnelMaxwell(float cosTheta1, float ior1, float ior2)
     {
-        float sinTheta1 = sqrt(std::max(1 - cosTheta1 * cosTheta1, 0.f));
+        float sinTheta1 = glm::sqrt(glm::max(1 - cosTheta1 * cosTheta1, 0.f));
         float sinTheta2 = sinTheta1 * ior1 / ior2;
         if (sinTheta2 > 1) return 1;
-        float cosTheta2 = sqrt(std::max(1 - sinTheta2 * sinTheta2, 0.f));
+        float cosTheta2 = glm::sqrt(glm::max(1 - sinTheta2 * sinTheta2, 0.f));
         float r_para = (ior1 * cosTheta2 - ior2 * cosTheta1) / (ior1 * cosTheta2 + ior2 * cosTheta1);
         float r_perp = (ior1 * cosTheta1 - ior2 * cosTheta2) / (ior1 * cosTheta1 + ior2 * cosTheta2);
 

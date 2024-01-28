@@ -33,7 +33,7 @@ IOR         0
 // Specular white
 MATERIAL 4
 TYPE	    Lambertian
-ALBEDO      .98 .98 .98
+ALBEDO      1 1 1
 METALLIC    0
 ROUGHNESS   0
 IOR         0
@@ -41,7 +41,7 @@ IOR         0
 // dielectric
 MATERIAL 5
 TYPE	    Dielectric
-ALBEDO      .99 .99 .99
+ALBEDO      1 1 1
 METALLIC    0
 ROUGHNESS   0
 IOR         1.3
@@ -53,7 +53,7 @@ FOVY        45
 ITERATIONS  5000
 DEPTH       8
 FILE        cornell
-EYE         4 5 10.5
+EYE         -5 5 4
 LOOKAT      0 5 0
 UP          0 1 0
 
@@ -109,7 +109,7 @@ SCALE       .01 10 10
 OBJECT 6
 ..\scenes\model\bunny.obj
 material 5
-TRANS       0 3 6
+TRANS       0 3 1
 ROTAT       0 0 0
 SCALE       1 1 1
 
@@ -117,14 +117,6 @@ SCALE       1 1 1
 OBJECT 7
 ..\scenes\model\bunny.obj
 material 1
-TRANS       3 1 1
+TRANS       3 2 -1
 ROTAT       0 0 0
 SCALE       1 1 1
-
-// Sphere
-OBJECT 7
-sphere
-material 1
-TRANS       -3 2 1
-ROTAT       0 0 0
-SCALE       2 2 2
