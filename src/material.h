@@ -7,11 +7,20 @@
 #include "glm/gtx/norm.hpp"
 #include "sceneStructs.h"
 
+enum BxDFFlags {
+    Unset = 0,
+    Reflection = 1 << 0,
+    Transmission = 1 << 1,
+    Diffuse = 1 << 2,
+    Glossy = 1 << 3,
+    Specular = 1 << 4,
+};
+
 class scatter_record
 {
 public:
     glm::vec3 bsdf;
-    float pdf;
+    float pdf = 0;
     bool delta;
     glm::vec3 dir;
 };
@@ -23,7 +32,7 @@ public:
         Lambertian,
         MetallicWorkflow,
         Dielectric,
-        Disney,
+        Microfacet,
         Light
     };
     
@@ -90,6 +99,49 @@ public:
             srec.dir = math::getRefractDir(n, wo, ior1, ior2);
             srec.bsdf = albedo * (ior2 * ior2) / (ior1 * ior1);
         }
+
+        srec.bsdf /= glm::abs(glm::dot(srec.dir, n));
+    }
+
+    __host__ __device__ glm::vec3 microfacetBSDF(const glm::vec3& n, const glm::vec3& wo, const glm::vec3 &wi)
+    {
+        float a2 = roughness * roughness;
+        float cosO = glm::dot(n, wo), cosI = glm::dot(n, wi);
+        glm::vec3 wm = glm::normalize(wo + wi);
+        float D = math::normalDistribGGX(glm::dot(wm, n), a2);
+        float G2 = math::SmithG2(roughness, cosO, cosI);
+        glm::vec3 F = math::FresnelSchilick(albedo, glm::dot(wo, wm));
+        glm::vec3 ret = F * D * G2 / glm::max(4 * cosO * cosI, 1e-8f);
+        volatile float r1 = ret.r, r2 = ret.g, r3 = ret.b;
+        return F * D * G2 / glm::max(4 * cosO * cosI, 1e-8f);
+    }
+
+    __host__ __device__ float microfacetPDF(const glm::vec3& n, const glm::vec3& wo, const glm::vec3& wi)
+    {
+        float a2 = roughness * roughness;
+        float cosO = glm::dot(n, wo), cosI = glm::dot(n, wi);
+        glm::vec3 wm = glm::normalize(wo + wi);
+        float D = math::normalDistribGGX(glm::dot(wm, n), a2);
+        float G1 = math::SmithG1(roughness, cosO);
+        return G1 * D / glm::max(4 * glm::dot(wo, n), 1e-8f);
+    }
+
+    __host__ __device__ void microfacetScatterSample(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler)
+    {
+        volatile float n1 = n.x, n2 = n.y, n3 = n.z;
+        glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, roughness, sample2D(sampler));
+        volatile float newN1 = wm.x, newN2 = wm.y, newN3 = wm.z;
+        srec.dir = glm::reflect(wo, wm);
+        if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
+        {
+            srec.bsdf = glm::vec3(0);
+            srec.pdf = 0;
+            return;
+        }
+        srec.bsdf = microfacetBSDF(n, -1.f * wo, srec.dir);
+        volatile float c1 = srec.bsdf.r, c2 = srec.bsdf.g, c3 = srec.bsdf.b;
+        srec.pdf = microfacetPDF(n, -1.f * wo, srec.dir);
+        volatile float pdf1 = srec.pdf;
     }
 
     __host__ __device__ bool scatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler)
@@ -106,7 +158,9 @@ public:
             dielectricScatterSample(n, wo, srec, sampler);
             return true;
             break;
-        case Material::Disney:
+        case Material::Microfacet:
+            microfacetScatterSample(n, wo, srec, sampler);
+            return true;
             break;
         case Material::Light:
             srec.bsdf = albedo;

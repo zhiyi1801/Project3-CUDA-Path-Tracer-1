@@ -94,7 +94,7 @@ public:
     __host__ __device__
     void build_from_w(const glm::vec3& w) {
         glm::vec3 unit_w = glm::normalize(w);
-        glm::vec3 a = (fabs(unit_w.x) > 0.9) ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+        glm::vec3 a = (fabs(unit_w.x) > 0.9) ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
         glm::vec3 v = glm::normalize(cross(unit_w, a));
         glm::vec3 u = cross(unit_w, v);
         axis[0] = u;
@@ -108,6 +108,20 @@ public:
 
 namespace math
 {
+    template <typename T>
+    __host__ __device__ inline T Sqr(T v) { return v * v; }
+
+    __host__ __device__ inline float Lerp(float x, float a, float b) {
+        return (1 - x) * a + x * b;
+    }
+
+    __host__ __device__ static glm::mat3 localRefMatrix(glm::vec3 n) {
+        glm::vec3 t = (glm::abs(n.x) > 0.9f) ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
+        glm::vec3 b = glm::normalize(glm::cross(n, t));
+        t = glm::cross(b, n);
+        return glm::mat3(t, b, n);
+    }
+
     /// <summary>
     /// get a cosine weighted sample in a hemisphere with normal n
     /// </summary>
@@ -148,6 +162,13 @@ namespace math
         return wo - 2.f * (normal * glm::dot(wo, normal));
     }
 
+    __host__ __device__ inline  glm::vec2 sampleUniformDisc(glm::vec2 r)
+    {
+        float radius = glm::sqrt(r[0]);
+        float theta = TWO_PI * r[1];
+        return glm::vec2(radius * glm::cos(theta), radius * glm::sin(theta));
+    }
+
     /// <summary>
     /// compute refract dir from ior1 to ior2
     /// </summary>
@@ -172,6 +193,11 @@ namespace math
         return f0 + (1 - f0) * pow5(1 - cosTheta);
     }
 
+    __host__ __device__  inline glm::vec3 FresnelSchilick(const glm::vec3 &f0, float cosTheta)
+    {
+        return f0 + (glm::vec3(1.f) - f0) * pow5(1 - cosTheta);
+    }
+
     __host__ __device__  inline float FresnelMaxwell(float cosTheta1, float ior1, float ior2)
     {
         float sinTheta1 = glm::sqrt(glm::max(1 - cosTheta1 * cosTheta1, 0.f));
@@ -182,5 +208,72 @@ namespace math
         float r_perp = (ior1 * cosTheta1 - ior2 * cosTheta2) / (ior1 * cosTheta1 + ior2 * cosTheta2);
 
         return (r_para * r_para + r_perp * r_perp) / 2.f;
+    }
+
+    /**
+    * Sampling (Trowbridge-Reitz/GTR2/GGX) microfacet distribution, but only visible normals.
+    * This reduces invalid samples and make pdf values at grazing angles more stable
+    * See [Sampling the GGX Distribution of Visible Normals, Eric Heitz, JCGT 2018]:
+    * https://jcgt.org/published/0007/04/01/
+    * Note:
+    */
+    __host__ __device__  inline glm::vec3 sampleNormalGGX(const glm::vec3 &n, const glm::vec3 &wo, float alpha, const glm::vec2 &r)
+    {
+        glm::mat3 local2world = math::localRefMatrix(n);
+        glm::mat3 world2local = glm::transpose(local2world);
+
+        glm::vec3 whL = glm::normalize(glm::vec3(alpha, alpha, 1.f) * (world2local * wo));
+        if (whL.z < 0)
+        {
+            whL *= -1.f;
+        }
+
+        glm::vec3 T1 = (whL.z < 0.99999f) ? glm::normalize(glm::cross(glm::vec3 (0.f, 0.f, 1.f), whL))
+            : glm::vec3(1.f, 0.f, 0.f);
+        glm::vec3 T2 = glm::cross(whL, T1);
+
+        glm::vec2 p = math::sampleUniformDisc(r);
+
+        float h = glm::sqrt(1 - math::Sqr(p.x));
+        p.y = math::Lerp((1 + whL.z) / 2.f, h, p.y);
+
+        float pz = glm::sqrt(glm::max(0.f, 1.f - glm::dot(p, p)));
+        glm::vec3 nh = p.x * T1 + p.y * T2 + pz * whL;
+
+        return glm::normalize(local2world * glm::vec3(alpha * nh.x, alpha * nh.y,
+                                        glm::max(1e-6f, nh.z)));
+    }
+
+    // Disney Appoximation of Smith term for GGX
+    // [Heitz 2014, "Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs"]
+    // @a2: roughness^2 ? ((roughness + 1)/2)^2
+    // @NoV: dot(normal, viewVector)
+    // @NoL: dot(normal, lightVector)
+    // Thanks to QianMo https://zhuanlan.zhihu.com/p/81708753
+    // Disney's implementation: https://schuttejoe.github.io/post/ggximportancesamplingpart2/, https://ubm-twvideo01.s3.amazonaws.com/o1/vault/gdc2017/Presentations/Hammon_Earl_PBR_Diffuse_Lighting.pdf
+    __host__ __device__  inline float SmithG2(float a2, float NoV, float NoL)
+    {
+        float denom = NoL * glm::sqrt(NoV * NoV * (1.f - a2) + a2) + NoV * glm::sqrt(NoL * NoL * (1.f - a2) + a2);
+        float nom = 2.f * NoV * NoL;
+        return nom / denom;
+    }
+
+    __host__ __device__  inline float SmithG1(float a2, float NoV)
+    {
+        float denom = glm::sqrt(NoV * NoV * (1 - a2) + a2) + NoV;
+        float nom = 2 * NoV;
+        return nom / denom;
+    }
+
+    // @cosTheta: dot(normal, wm), cosTheta of macroface normal and the sample normal
+    __host__ __device__  inline float normalDistribGGX(float cosTheta, float a2)
+    {
+        if (cosTheta < 1e-6f) {
+            return 0.f;
+        }
+        float nom = a2;
+        float denom = cosTheta * cosTheta * (a2 - 1.f) + 1.f;
+        denom = denom * denom * PI;
+        return nom / denom;
     }
 }

@@ -8,6 +8,7 @@ const std::map<std::string, Material::Type> materialTypeMap{
     {"Lambertian", Material::Type::Lambertian},
     {"MetallicWorkflow", Material::Type::MetallicWorkflow},
     {"Dielectric", Material::Type::Dielectric},
+    {"Microfacet", Material::Type::Microfacet},
     {"Light", Material::Type::Light}
 };
 

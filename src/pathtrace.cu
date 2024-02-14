@@ -298,8 +298,13 @@ __global__ void shadeFakeMaterial(
 			scatter_record srec;
 			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng);
 			Material::Type mType = materials[intersection.materialId].type;
+			if (srec.pdf == 0)
+			{
+				pathSegments[idx].color *= 0;
+				pathSegments[idx].remainingBounces = 0;
+			}
 			// If the material indicates that the object was a light, "light" the ray
-			if (!ifScatter) {
+			else if (!ifScatter) {
 				pathSegments[idx].color *= (srec.bsdf / srec.pdf);
 				pathSegments[idx].remainingBounces = 0;
 			}
@@ -311,14 +316,10 @@ __global__ void shadeFakeMaterial(
 				pathSegments[idx].ray.direction = srec.dir;
 				pathSegments[idx].ray.origin = intersection.interPoint + 
 												(mType == Material::Type::Dielectric ? 10 : 1) * EPSILON * offsetDir;
-				if (!srec.delta)
-				{
-					pathSegments[idx].color *= (srec.bsdf * glm::dot(srec.dir, intersection.surfaceNormal) / srec.pdf);
-				}
-				else
-				{
-					pathSegments[idx].color *= srec.bsdf;
-				}
+
+				volatile glm::vec3 a = (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
+				volatile float a1 = a.r, a2 = a.g, a3 = a.b;
+				pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
 
 				if (--(pathSegments[idx].remainingBounces) == 0)
 				{
