@@ -48,10 +48,10 @@ IOR         1.6
 
 // blue
 MATERIAL 6
-TYPE	    Lambertian
+TYPE	    Microfacet
 ALBEDO      .35 .85 .35
 METALLIC    0
-ROUGHNESS   0.
+ROUGHNESS   0.5
 IOR         0
 
 // Camera
@@ -61,7 +61,7 @@ FOVY        45
 ITERATIONS  5000
 DEPTH       8
 FILE        cornell
-EYE         0 5 3
+EYE         0 5 5
 LOOKAT      0 5 0
 UP          0 1 0
 
@@ -112,4 +112,20 @@ material 3
 TRANS       4.99 5 0
 ROTAT       0 0 0
 SCALE       .01 10 10
+
+// Sphere
+OBJECT 6
+..\scenes\model\sphere.obj
+material 5
+TRANS       0 3 1
+ROTAT       0 0 0
+SCALE       .5 .5 .5
+
+// Sphere
+OBJECT 7
+..\scenes\model\bunny.obj
+material 6
+TRANS       3 2 -3
+ROTAT       0 0 0
+SCALE       1 1 1
 
