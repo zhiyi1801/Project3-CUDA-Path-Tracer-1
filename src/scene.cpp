@@ -36,7 +36,9 @@ namespace Resource
 {
     int meshCount(0);
     std::vector<MeshData*> meshDataPool;
+    std::vector<image*> textureDataPool;
     std::map<std::string, int> meshDataIdx;
+    std::map<std::string, int> textureDataIdx;
 }
 
 Scene::Scene(const string& filename) {
@@ -243,7 +245,7 @@ int Scene::loadMaterial(string materialid) {
                 newMaterial.metallic = atof(tokens[1].c_str());
             }
             else if (strcmp(tokens[0].c_str(), "ROUGHNESS") == 0) {
-                newMaterial.roughness = atof(tokens[1].c_str());
+                newMaterial.roughness = glm::max(atof(tokens[1].c_str()), 0.001);
             }
             else if (strcmp(tokens[0].c_str(), "IOR") == 0) {
                 newMaterial.ior = atof(tokens[1].c_str());

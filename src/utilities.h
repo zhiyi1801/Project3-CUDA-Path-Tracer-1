@@ -140,6 +140,19 @@ namespace math
         return uvw.local(xyz);
     }
 
+    __host__ __device__
+        inline glm::vec3 sampleHemisphereUniform(const glm::vec3& n, Sampler& sampler)
+    {
+        ONB uvw;
+        uvw.build_from_w(n);
+        float r1 = sample1D(sampler), r2 = sample1D(sampler);
+        float cosTheta = 1 - r1, sinTheta = glm::sqrt(1 - cosTheta * cosTheta);
+        float phi = TWO_PI * r2;
+        glm::vec3 xyz(sinTheta * glm::cos(phi), sinTheta * glm::sin(phi), cosTheta);
+
+        return uvw.local(xyz);
+    }
+
     __host__ __device__  inline float sin_cos_convert(float t)
     {
         return sqrt(std::max(1 - t * t, 0.f));

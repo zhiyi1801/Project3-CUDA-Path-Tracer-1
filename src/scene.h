@@ -16,6 +16,7 @@
 #include "BVH.h";
 #include "tiny_obj_loader.hpp"
 #include "material.h"
+#include "image.h"
 
 using namespace std;
 
@@ -70,7 +71,9 @@ namespace Resource
 
     extern int meshCount;
     extern std::vector<MeshData*> meshDataPool;
+    extern std::vector<image*> textureDataPool;
     extern std::map<std::string, int> meshDataIdx;
+    extern std::map<std::string, int> textureDataIdx;
 }
 
 //Meshdata contains data of an obj or other 3d model file, it is prototype of Geometry, area and bounding box is used to calculate BVH tree and intersections.

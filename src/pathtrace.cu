@@ -28,6 +28,8 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
+	volatile float c1, c2, c3;
+
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
 		glm::vec3 pix = image[index];
@@ -36,6 +38,8 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
 		color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
 		color.z = glm::clamp((int)(pix.z / iter * 255.0), 0, 255);
+
+		c1 = color.x, c2 = color.y, c3 = color.z;
 
 		// Each thread writes one pixel location in the texture (textel)
 		pbo[index].w = 0;
@@ -146,6 +150,7 @@ __global__ void computeIntersections(
 )
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
+	volatile int textID = pathSegments[path_index].pixelIndex;
 	if (path_index < num_paths)
 	{
 		PathSegment pathSegment = pathSegments[path_index];
@@ -162,6 +167,8 @@ __global__ void computeIntersections(
 
 		GpuBVHNode* gpuBVH = dev_scene->dev_gpuBVH;
 		Triangle* triangles = dev_scene->dev_triangles;
+
+		volatile float p1, p2, p3;
 
 		// naive parse through global geoms
 
@@ -186,6 +193,7 @@ __global__ void computeIntersections(
 				t_min = t;
 				hit_geom_index = i;
 				intersect_point = tmp_intersect;
+				p1 = tmp_intersect.x, p2 = tmp_intersect.y, p3 = tmp_intersect.z;
 				normal = tmp_normal;
 			}
 		}
@@ -279,15 +287,16 @@ __global__ void shadeFakeMaterial(
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	//volatile int textID = pathSegments[idx].pixelIndex;
-	//volatile float c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
-	//volatile float o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
-	//volatile float d1 = pathSegments[idx].ray.direction.x, d2 = pathSegments[idx].ray.direction.y, d3 = pathSegments[idx].ray.direction.z;
-	//volatile float n1 = shadeableIntersections[idx].surfaceNormal.x, n2 = shadeableIntersections[idx].surfaceNormal.y, n3 = shadeableIntersections[idx].surfaceNormal.z;
-	//volatile float p1 = shadeableIntersections[idx].interPoint.x, p2 = shadeableIntersections[idx].interPoint.y, p3 = shadeableIntersections[idx].interPoint.z;
+	volatile int textID = pathSegments[idx].pixelIndex;
+	volatile float c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
+	volatile float o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
+	volatile float d1 = pathSegments[idx].ray.direction.x, d2 = pathSegments[idx].ray.direction.y, d3 = pathSegments[idx].ray.direction.z;
+	volatile float n1 = shadeableIntersections[idx].surfaceNormal.x, n2 = shadeableIntersections[idx].surfaceNormal.y, n3 = shadeableIntersections[idx].surfaceNormal.z;
+	volatile float p1 = shadeableIntersections[idx].interPoint.x, p2 = shadeableIntersections[idx].interPoint.y, p3 = shadeableIntersections[idx].interPoint.z;
+	volatile int mid = shadeableIntersections[idx].materialId;
 	//volatile float off1 = p1, off2 = p2, off3 = p3, testt = shadeableIntersections[idx].t;
 	if (idx < num_paths)
-	{
+	{ 
 		ShadeableIntersection intersection = shadeableIntersections[idx];
 		if (intersection.t > 0.0f) { // if the intersection exists...
 		  // Set up the RNG
@@ -317,8 +326,6 @@ __global__ void shadeFakeMaterial(
 				pathSegments[idx].ray.origin = intersection.interPoint + 
 												(mType == Material::Type::Dielectric ? 10 : 1) * EPSILON * offsetDir;
 
-				volatile glm::vec3 a = (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
-				volatile float a1 = a.r, a2 = a.g, a3 = a.b;
 				pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
 
 				if (--(pathSegments[idx].remainingBounces) == 0)

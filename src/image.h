@@ -1,19 +1,55 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <cuda_runtime.h>
 
 using namespace std;
 
 class image {
-private:
+public:
     int xSize;
     int ySize;
-    glm::vec3 *pixels;
+    glm::vec3* pixels;
 
-public:
+
     image(int x, int y);
+    image(std::string filePath);
     ~image();
     void setPixel(int x, int y, const glm::vec3 &pixel);
     void savePNG(const std::string &baseFilename);
     void saveHDR(const std::string &baseFilename);
+};
+
+class devTexObj
+{
+public:
+    int width, height;
+    glm::vec3* data;
+
+    devTexObj() = default;
+
+    devTexObj(image* img, glm::vec3 *devData)
+    {
+        width = img->xSize;
+        height = img->ySize;
+        data = devData;
+    }
+
+    __device__ glm::vec3 getValue(int x, int y)
+    {
+        return data[y * width + x];
+    }
+
+    __device__ glm::vec3 sample(glm::vec2 uv)
+    {
+        float u = uv.x, v = uv.y;
+        float x = u * (width - 1), y = v * (height - 1);
+        int lx = x, ux = x + 1 >= width ? lx : lx + 1;
+        int ly = y, uy = y + 1 >= height ? ly : ly + 1;
+
+        float fx = glm::fract(x), fy = glm::fract(y);
+        glm::vec3 p1 = glm::mix(getValue(lx, ly), getValue(ux, ly), fx);
+        glm::vec3 p2 = glm::mix(getValue(lx, uy), getValue(ux, uy), fx);
+        return glm::mix(p1, p2, fy);
+    }
 };

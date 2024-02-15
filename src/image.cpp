@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <stb_image.h>
 #include <stb_image_write.h>
 
 #include "image.h"
@@ -8,6 +9,22 @@ image::image(int x, int y) :
         xSize(x),
         ySize(y),
         pixels(new glm::vec3[x * y]) {
+}
+
+image::image(std::string filePath)
+{
+    int channels;
+    float *data = stbi_loadf(filePath.c_str(), &xSize, &ySize, &channels, 3);
+
+    if (!data)
+    {
+        std::cout << "\t[Fail to load image: " + filePath + "]" << std::endl;
+        throw;
+    }
+    pixels = new glm::vec3(xSize * ySize);
+    memcpy(pixels, data, xSize * ySize * sizeof(glm::vec3));
+
+    stbi_image_free(data);
 }
 
 image::~image() {
