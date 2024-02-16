@@ -49,7 +49,7 @@ IOR         1.6
 // blue
 MATERIAL 6
 TYPE	    Microfacet
-ALBEDO      .35 .85 .35
+ALBEDO      .35 .35 .85
 METALLIC    0
 ROUGHNESS   0.5
 IOR         0

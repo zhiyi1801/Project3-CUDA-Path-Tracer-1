@@ -75,6 +75,7 @@ set(headers
     src/utilities.h
     src/Bounds3.hpp
     src/BVH.h
+    src/material.h
     src/tiny_obj_loader.hpp
     src/ImGui/imconfig.h
 	
@@ -99,6 +100,7 @@ set(sources
     src/preview.cpp
     src/utilities.cpp
     src/BVH.cpp
+    src/material.cpp
     src/tiny_obj_loader.cpp
 	
     src/ImGui/imgui.cpp 

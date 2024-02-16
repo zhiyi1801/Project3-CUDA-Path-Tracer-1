@@ -491,7 +491,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 		cudaDeviceSynchronize();
 		depth++;
 
-		num_paths = compact_rays(rayValid, rayIndex, num_paths);
+		//num_paths = compact_rays(rayValid, rayIndex, num_paths);
 
 		// TODO:
 		// --- Shading Stage ---
