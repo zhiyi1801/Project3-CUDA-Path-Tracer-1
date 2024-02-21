@@ -33,6 +33,12 @@ public:
     int bvh_size;
     Triangle* dev_triangles;
     GpuBVHNode* dev_gpuBVH;
+
+    int tex_num;
+    devTexObj* dev_textures;
+    glm::vec3* dev_texture_data;
+
+    int envMapID = -1;
 };
 
 class Scene {
@@ -41,6 +47,7 @@ private:
     int loadMaterial(string materialid);
     int loadGeom(string objectid);
     int loadCamera();
+    int loadTexture(const string& fileName);
 public:
     Scene(const string& filename);
     void setDevData();
@@ -50,6 +57,10 @@ public:
     std::vector<GPUGeom> gpuGeoms;
     std::vector<Material> materials;
     std::vector<Triangle> triangles;
+    std::vector<image*> textures;
+    std::map<image*, int> textureIdMap;
+
+    int envMapID = -1;
 
     std::vector<GpuBVHNodeInfo> gpuBVHNodeInfos;
     std::vector<GpuBVHNode> gpuBVHNodes;
@@ -68,12 +79,11 @@ namespace Resource
 {
     MeshData* loadObj(const string& filename, const int _geomIdx);
     void clear();
+    image* loadTexture(const std::string& filename);
 
     extern int meshCount;
-    extern std::vector<MeshData*> meshDataPool;
-    extern std::vector<image*> textureDataPool;
-    extern std::map<std::string, int> meshDataIdx;
-    extern std::map<std::string, int> textureDataIdx;
+    extern std::map<std::string, MeshData*> meshPool;
+    extern std::map<std::string, image*> texturePool;
 }
 
 //Meshdata contains data of an obj or other 3d model file, it is prototype of Geometry, area and bounding box is used to calculate BVH tree and intersections.

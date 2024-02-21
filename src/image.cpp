@@ -4,6 +4,7 @@
 #include <stb_image_write.h>
 
 #include "image.h"
+#include "utilities.h"
 
 image::image(int x, int y) :
         xSize(x),
@@ -18,10 +19,10 @@ image::image(std::string filePath)
 
     if (!data)
     {
-        std::cout << "\t[Fail to load image: " + filePath + "]" << std::endl;
+        std::cout << "\t[Fail to load image: " + filePath + "]" << stbi_failure_reason() <<  std::endl;
         throw;
     }
-    pixels = new glm::vec3(xSize * ySize);
+    pixels = new glm::vec3[xSize * ySize];
     memcpy(pixels, data, xSize * ySize * sizeof(glm::vec3));
 
     stbi_image_free(data);
@@ -42,9 +43,13 @@ void image::savePNG(const std::string &baseFilename) {
         for (int x = 0; x < xSize; x++) { 
             int i = y * xSize + x;
             glm::vec3 pix = glm::clamp(pixels[i], glm::vec3(), glm::vec3(1)) * 255.f;
-            bytes[3 * i + 0] = (unsigned char) pix.x;
-            bytes[3 * i + 1] = (unsigned char) pix.y;
-            bytes[3 * i + 2] = (unsigned char) pix.z;
+#ifdef TONEMAPPING
+            pix = gammaCorrection(ACESFilm(pix/255.0f));
+            pix *= 255.0f;
+#endif // TONEMAPPING
+            bytes[3 * i + 0] = (unsigned char)pix.x;
+            bytes[3 * i + 1] = (unsigned char)pix.y;
+            bytes[3 * i + 2] = (unsigned char)pix.z;
         }
     }
 

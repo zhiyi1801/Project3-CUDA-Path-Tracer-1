@@ -35,10 +35,8 @@ void checkCUDAErrorFn(const char* msg, const char* file, int line) {
 namespace Resource
 {
     int meshCount(0);
-    std::vector<MeshData*> meshDataPool;
-    std::vector<image*> textureDataPool;
-    std::map<std::string, int> meshDataIdx;
-    std::map<std::string, int> textureDataIdx;
+    std::map<std::string, MeshData*> meshPool;
+    std::map<std::string, image*> texturePool;
 }
 
 Scene::Scene(const string& filename) {
@@ -66,6 +64,10 @@ Scene::Scene(const string& filename) {
             else if (strcmp(tokens[0].c_str(), "CAMERA") == 0) {
                 loadCamera();
                 cout << " " << endl;
+            }
+            else if (strcmp(tokens[0].c_str(), "ENV") == 0)
+            {
+                this->envMapID = loadTexture(tokens[1]);
             }
         }
     }
@@ -256,6 +258,23 @@ int Scene::loadMaterial(string materialid) {
     }
 }
 
+int Scene::loadTexture(const string &fileName)
+{
+    cout << "Loading texture: " + fileName + "\n";
+    image* tex = Resource::loadTexture(fileName);
+    auto texID = textureIdMap.find(tex);
+    if (texID != textureIdMap.end())
+    {
+        cout << "Already exist: " + fileName + "\n";
+        return texID->second;
+    }
+
+    int ret = textures.size();
+    textures.emplace_back(tex);
+    textureIdMap[tex] = ret;
+    return ret;
+}
+
 void Scene::setDevData()
 {
     for (const auto& g : geoms)
@@ -297,12 +316,12 @@ void Scene::setDevData()
 
 MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
 {
-    auto exist = meshDataIdx.find(filename);
-    if (exist != meshDataIdx.end())
+    auto exist = meshPool.find(filename);
+    if (exist != meshPool.end())
     {
         //protoId = exist->second;
         std::cout << "---obj file existed " << filename << "---" << std::endl;
-        return meshDataPool[exist->second];
+        return exist->second;
     }
 
     MeshData* model = new MeshData;
@@ -324,6 +343,11 @@ MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
         std::cout << "---Warn Error msg " << warn << "---" << std::endl;
     }
     bool hasTex = !attrib.texcoords.empty();
+    bool hasNor = !attrib.normals.empty();
+    if (!hasNor)
+    {
+        cout << "model does not have vertex normal, use face normal\n";
+    }
 
     glm::vec3 min_vert = glm::vec3{ std::numeric_limits<float>::infinity(),
                                  std::numeric_limits<float>::infinity(),
@@ -344,10 +368,24 @@ MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
                 std::array<glm::vec3, 3> _v{ *((glm::vec3*)attrib.vertices.data() + idx0.vertex_index),
                                              *((glm::vec3*)attrib.vertices.data() + idx1.vertex_index),
                                              *((glm::vec3*)attrib.vertices.data() + idx2.vertex_index) };
-
-                std::array<glm::vec3, 3> _n{ *((glm::vec3*)attrib.normals.data() + idx0.normal_index),
-                                             *((glm::vec3*)attrib.normals.data() + idx1.normal_index),
-                                             *((glm::vec3*)attrib.normals.data() + idx2.normal_index) };
+                std::array<glm::vec3, 3> _n;
+#if VERTEX_NORMAL
+                if (hasNor)
+                {
+                    _n = std::array<glm::vec3, 3> { *((glm::vec3*)attrib.normals.data() + idx0.normal_index),
+                                                    *((glm::vec3*)attrib.normals.data() + idx1.normal_index),
+                                                    *((glm::vec3*)attrib.normals.data() + idx2.normal_index) };
+                }
+                else
+                {
+                    glm::vec3 faceNor = glm::normalize(glm::cross(_v[1] - _v[0], _v[2] - _v[0]));
+                    _n = std::array<glm::vec3, 3>{ faceNor, faceNor, faceNor };
+                }
+#else
+                //face normal
+                glm::vec3 faceNor = glm::normalize(glm::cross(_v[1] - _v[0], _v[2] - _v[0]));
+                _n = { faceNor, faceNor, faceNor };
+#endif
 
                 std::array<glm::vec2, 3> _tex;
                 if (hasTex)
@@ -369,11 +407,12 @@ MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
         }
     }
     //model->boundingBox = Bounds3(min_vert, max_vert);
-    Resource::meshDataPool.push_back(model);
-    Resource::meshDataIdx[filename] = meshCount++;
+    Resource::meshPool[filename] = model;
     //protoId = meshCount++;
     return model;
 }
+
+
 
 void Scene::clear()
 {
@@ -383,11 +422,27 @@ void Scene::clear()
 
 void Resource::clear()
 {
-    for (auto& m : meshDataPool)
+    for (auto& m : meshPool)
     {
-        delete m;
+        delete m.second;
     }
-    meshDataPool.clear();
+    meshPool.clear();
+
+    for (auto& t : texturePool)
+    {
+        delete t.second;
+    }
+    texturePool.clear();
+}
+
+image* Resource::loadTexture(const std::string& filename) {
+    auto find = texturePool.find(filename);
+    if (find != texturePool.end()) {
+        return find->second;
+    }
+    auto texture = new image(filename);
+    texturePool[filename] = texture;
+    return texture;
 }
 
 void DevScene::initiate(const Scene& scene)
@@ -401,10 +456,37 @@ void DevScene::initiate(const Scene& scene)
     cudaMalloc(&dev_gpuBVH, sizeof(GpuBVHNode) * scene.gpuBVHNodes.size());
     cudaMemcpy(dev_gpuBVH, scene.gpuBVHNodes.data(), sizeof(GpuBVHNode) * scene.gpuBVHNodes.size(), cudaMemcpyHostToDevice);
     checkCUDAError("DevScene initiate::gpu bvh tree");
+
+    tex_num = scene.textures.size();
+    std::vector<devTexObj> tempDevTextures;
+    int textureTotalBytes = 0;
+    for (auto tex : scene.textures)
+    {
+        textureTotalBytes += tex->byteSize();
+    }
+    cudaMalloc(&dev_texture_data, textureTotalBytes);
+    checkCUDAError("Devscene: dev_texture_data malloc");
+
+    int offset = 0;
+    for (auto tex : scene.textures)
+    {
+        cudaMemcpy(dev_texture_data + offset, tex->data(), tex->byteSize(), cudaMemcpyHostToDevice);
+        checkCUDAError("Devscene: dev_texture_data copy");
+        tempDevTextures.emplace_back(devTexObj(tex, dev_texture_data + offset));
+        offset += tex->byteSize() / sizeof(glm::vec3);
+    }
+    cudaMalloc(&dev_textures, tempDevTextures.size() * sizeof(devTexObj));
+    checkCUDAError("DevScene::dev_textures::malloc");
+    cudaMemcpy(dev_textures, tempDevTextures.data(), tempDevTextures.size() * sizeof(devTexObj), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene::dev_textures::copy");
+
+    this->envMapID = scene.envMapID;
 }
 
 void DevScene::destroy()
 {
     cudaSafeFree(dev_triangles);
-    cudaFree(dev_gpuBVH);
+    cudaSafeFree(dev_gpuBVH);
+    cudaSafeFree(dev_textures);
+    cudaSafeFree(dev_texture_data);
 }

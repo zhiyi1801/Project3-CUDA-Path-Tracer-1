@@ -18,6 +18,14 @@ public:
     void setPixel(int x, int y, const glm::vec3 &pixel);
     void savePNG(const std::string &baseFilename);
     void saveHDR(const std::string &baseFilename);
+
+    size_t byteSize() const {
+        return sizeof(glm::vec3) * xSize * ySize;
+    }
+
+    glm::vec3* data() const {
+        return pixels;
+    }
 };
 
 class devTexObj
@@ -40,7 +48,7 @@ public:
         return data[y * width + x];
     }
 
-    __device__ glm::vec3 sample(glm::vec2 uv)
+    __device__ glm::vec3 linearSample(glm::vec2 uv)
     {
         float u = uv.x, v = uv.y;
         float x = u * (width - 1), y = v * (height - 1);

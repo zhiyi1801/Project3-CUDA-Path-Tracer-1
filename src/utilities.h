@@ -21,9 +21,28 @@
 #define USE_BVH 1
 #define USE_SAH 1
 #define USE_MTBVH 1
+#define TONEMAPPING 0
+#define VERTEX_NORMAL 1
+#define SHOW_NORMAL 0
 
 using Sampler = thrust::default_random_engine;
 using color = glm::vec3;
+
+//https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+__host__ __device__ inline glm::vec3 ACESFilm(glm::vec3 x)
+{
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return glm::clamp((x * (a * x + b)) / (x * (c * x + d) + e), glm::vec3(0), glm::vec3(1));
+}
+
+__host__ __device__ inline glm::vec3 gammaCorrection(glm::vec3 x)
+{
+    return glm::pow(x, glm::vec3(1 / 2.2f));
+}
 
 __host__ __device__  inline static float sample1D(Sampler& sampler, float min = 0, float max = 1) {
     return thrust::uniform_real_distribution<float>(min, max)(sampler);
@@ -39,6 +58,12 @@ __host__ __device__  inline static glm::vec3 sample3D(Sampler& sampler, float mi
 
 __host__ __device__  inline static glm::vec4 sample4D(Sampler& sampler, float min = 0, float max = 1) {
     return glm::vec4(sample3D(sampler, min, max), sample1D(sampler, min, max));
+}
+
+__host__ __device__  inline static glm::vec2 random2D(const glm::vec3 &w, int ite) {
+    float r1 = glm::fract(glm::sin(glm::dot(w, glm::vec3(12.9898, 78.233, 45.645)) + ite * 25.345) * 43758.5453);
+    float r2 = glm::fract(glm::sin(glm::dot(w, glm::vec3(45.432, 234.233, 99.99)) + ite * 42.345) * 219.23);
+    return glm::vec2(r1, r2);
 }
 
 class GuiDataContainer
@@ -115,11 +140,18 @@ namespace math
         return (1 - x) * a + x * b;
     }
 
-    __host__ __device__ static glm::mat3 localRefMatrix(glm::vec3 n) {
+    __host__ __device__ static glm::mat3 localRefMatrix(const glm::vec3 &n) {
         glm::vec3 t = (glm::abs(n.x) > 0.9f) ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
         glm::vec3 b = glm::normalize(glm::cross(n, t));
         t = glm::cross(b, n);
         return glm::mat3(t, b, n);
+    }
+
+    __host__ __device__ inline glm::vec2 sphere2Plane(const glm::vec3 &dir) {
+        return glm::vec2(
+            glm::fract(glm::atan(dir.z, dir.x) * InvPI * .5f + 1.f),
+            glm::atan(glm::length(glm::vec2(dir.x, dir.z)), dir.y) * InvPI
+        );
     }
 
     /// <summary>
@@ -127,12 +159,12 @@ namespace math
     /// </summary>
     /// <param name="n"> the normal direction </param>
     /// <returns> a vec3 direction sample </returns>
-    __host__ __device__ 
-    inline glm::vec3 sampleHemisphereCosine(const glm::vec3 &n, Sampler &sampler)
+    __host__ __device__
+        inline glm::vec3 sampleHemisphereCosine(const glm::vec3& n, glm::vec2 r)
     {
         ONB uvw;
         uvw.build_from_w(n);
-        float r1 = sample1D(sampler), r2 = sample1D(sampler);
+        float r1 = r.x, r2 = r.y;
         float sinTheta = glm::sqrt(r1), cosTheta = sqrt(1 - r1);
         float phi = TWO_PI * r2;
         glm::vec3 xyz(sinTheta * glm::cos(phi), sinTheta * glm::sin(phi), cosTheta);
@@ -162,6 +194,16 @@ namespace math
     {
         float x2 = x * x;
         return x2 * x2 * x;
+    }
+
+    __host__ __device__  inline float processNAN(float x)
+    {
+        return x != x ? 0 : x;
+    }
+
+    __host__ __device__  inline glm::vec3 processNAN(const glm::vec3 &v)
+    {
+        return glm::vec3(processNAN(v.x), processNAN(v.y), processNAN(v.z));
     }
 
     __host__ __device__  inline float lengthSquared(const glm::vec3 &v)

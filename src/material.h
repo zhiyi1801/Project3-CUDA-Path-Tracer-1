@@ -48,13 +48,14 @@ public:
 
     __host__ __device__ glm::vec3 lambertianScatter(const glm::vec3 &n, const glm::vec3 &wo, Sampler &sampler)
     {
-        return math::sampleHemisphereCosine(n, sampler);
+        glm::vec2 r = sample2D(sampler);
+        return math::sampleHemisphereCosine(n, r);
     }
 
-    __host__ __device__ void lambertianScatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler)
+    __host__ __device__ void lambertianScatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler, int ite)
     {
         srec.bsdf = albedo / PI;
-        srec.dir = math::sampleHemisphereCosine(n, sampler);
+        srec.dir = math::sampleHemisphereCosine(n, sample2D(sampler));
         srec.pdf = glm::dot(srec.dir, n) / PI;
         srec.delta = false;
     }
@@ -130,7 +131,6 @@ public:
     {
         volatile float n1 = n.x, n2 = n.y, n3 = n.z;
         glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, roughness, sample2D(sampler));
-        volatile float newN1 = wm.x, newN2 = wm.y, newN3 = wm.z;
         srec.dir = glm::reflect(wo, wm);
         if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
         {
@@ -139,17 +139,15 @@ public:
             return;
         }
         srec.bsdf = microfacetBSDF(n, -1.f * wo, srec.dir);
-        volatile float c1 = srec.bsdf.r, c2 = srec.bsdf.g, c3 = srec.bsdf.b;
         srec.pdf = microfacetPDF(n, -1.f * wo, srec.dir);
-        volatile float pdf1 = srec.pdf;
     }
 
-    __host__ __device__ bool scatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler)
+    __host__ __device__ bool scatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler, int ite)
     {
         switch (type)
         {
         case Material::Lambertian:
-            lambertianScatterSample(n, wo, srec, sampler);
+            lambertianScatterSample(n, wo, srec, sampler, ite);
             return true;
             break;
         case Material::MetallicWorkflow:
@@ -179,4 +177,9 @@ public:
     float roughness =   .0f;
     float metallic  =   .0f;
     float ior       =   1.5f;       // index of refraction
+
+    int albedoMapID = -1;
+    int metallicMapID = -1;
+    int roughnessMapID = -1;
+    int normalMapID = -1;
 };

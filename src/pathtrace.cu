@@ -29,18 +29,22 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
-	volatile float c1, c2, c3;
-
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
 		glm::vec3 pix = image[index];
 
-		glm::ivec3 color;
+		glm::vec3 color;
+
+#if TONEMAPPING
+		color = pix / (float)iter;
+		color = gammaCorrection(ACESFilm(color));
+		color = color * 255.0f;
+#else
 		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
 		color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
 		color.z = glm::clamp((int)(pix.z / iter * 255.0), 0, 255);
+#endif
 
-		c1 = color.x, c2 = color.y, c3 = color.z;
 
 		// Each thread writes one pixel location in the texture (textel)
 		pbo[index].w = 0;
@@ -136,8 +140,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		// TODO: implement antialiasing by jittering the ray
 		segment.ray.direction = glm::normalize(cam.view
-			- cam.right * cam.pixelLength.x * (float)(x + (u01(rng) - 0.5) - (float)cam.resolution.x * 0.5f)
-			- cam.up * cam.pixelLength.y * (float)(y + (u01(rng) - 0.5) - (float)cam.resolution.y * 0.5f));
+			- cam.right * cam.pixelLength.x * static_cast<float>(static_cast<float>(x) + (u01(rng) - 0.5) - cam.resolution.x * 0.5f)
+			- cam.up * cam.pixelLength.y * static_cast<float>(static_cast<float>(y) + (u01(rng) - 0.5) - cam.resolution.y * 0.5f));
 
 		segment.pixelIndex = index;
 		segment.remainingBounces = traceDepth;
@@ -157,15 +161,18 @@ __global__ void computeIntersections(
 	, DevScene* dev_scene
 	, ShadeableIntersection* intersections
 	, int* rayValid
+	, glm::vec3* img
 )
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 	volatile int textID = pathSegments[path_index].pixelIndex;
+
+	volatile float n1 = 1, n2 = 1, n3 = 1;
 	if (path_index < num_paths)
 	{
 		PathSegment pathSegment = pathSegments[path_index];
 
-		float t;
+		float t = -1;
 		glm::vec3 intersect_point;
 		glm::vec3 normal;
 		float t_min = FLT_MAX;
@@ -180,7 +187,7 @@ __global__ void computeIntersections(
 
 		volatile float p1, p2, p3;
 
-		// naive parse through global geoms
+		//naive parse through global geoms
 
 		for (int i = 0; i < geoms_size; i++)
 		{
@@ -264,10 +271,19 @@ __global__ void computeIntersections(
 		}
 #endif
 
+#if SHOW_NORMAL
+		intersections[path_index].t = -1.0f;
+		rayValid[path_index] = 0;
+		img[pathSegments[path_index].pixelIndex] += math::processNAN(glm::normalize(normal) + glm::vec3(1.f));
+#else
 		if (hit_geom_index == -1)
 		{
 			intersections[path_index].t = -1.0f;
 			rayValid[path_index] = 0;
+			if (dev_scene->envMapID >= 0)
+			{
+				img[pathSegments[path_index].pixelIndex] += pathSegments[path_index].color * dev_scene->dev_textures->linearSample(math::sphere2Plane(pathSegment.ray.direction));
+			}
 		}
 		else
 		{
@@ -278,6 +294,7 @@ __global__ void computeIntersections(
 			intersections[path_index].surfaceNormal = glm::normalize(normal);
 			rayValid[path_index] = 1;
 		}
+#endif // SHOW_NORMAL
 	}
 }
 
@@ -319,7 +336,7 @@ __global__ void shadeFakeMaterial(
 			Sampler rng = makeSeededRandomEngine(iter, idx, 0);
 
 			scatter_record srec;
-			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng);
+			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng, iter);
 			Material::Type mType = materials[intersection.materialId].type;
 			if (srec.pdf == 0)
 			{
@@ -341,7 +358,7 @@ __global__ void shadeFakeMaterial(
 				glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;
 				pathSegments[idx].ray.direction = srec.dir;
 				pathSegments[idx].ray.origin = intersection.interPoint + 
-												(mType == Material::Type::Dielectric ? 10 : 1) * EPSILON * offsetDir;
+												(mType == Material::Type::Dielectric ? 10 : 1) * EPSILON * srec.dir;
 
 				pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
 				rayValid[idx] = 1;
@@ -486,12 +503,13 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			, dev_scene
 			, dev_intersections1
 			, rayValid
+			, dev_image
 			);
 		checkCUDAError("trace one bounce");
 		cudaDeviceSynchronize();
 		depth++;
 
-		//num_paths = compact_rays(rayValid, rayIndex, num_paths);
+		num_paths = compact_rays(rayValid, rayIndex, num_paths);
 
 		// TODO:
 		// --- Shading Stage ---

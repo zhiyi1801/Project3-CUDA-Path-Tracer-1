@@ -1,0 +1,28 @@
+// dielectric
+MATERIAL 0
+TYPE	    Dielectric
+ALBEDO      .98 .98 .98
+METALLIC    0
+ROUGHNESS   0
+IOR         1.5
+
+// Camera
+CAMERA
+RES         800 800
+FOVY        45
+ITERATIONS  5000
+DEPTH       8
+FILE        cornell
+EYE         0.0 5 10.5
+LOOKAT      0 5 0
+UP          0 1 0
+
+OBJECT 0
+..\scenes\model\bunny10k.obj
+material 0
+TRANS       0 0.7 0
+ROTAT       0 180 0
+SCALE       5 5 5
+
+//envMap
+ENV ..\scenes\env\Newport_Loft_Ref.hdr

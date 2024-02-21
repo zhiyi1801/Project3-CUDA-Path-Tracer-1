@@ -44,14 +44,14 @@ TYPE	    Dielectric
 ALBEDO      1 1 1
 METALLIC    0
 ROUGHNESS   0
-IOR         1.6
+IOR         1.3
 
 // blue
 MATERIAL 6
 TYPE	    Microfacet
-ALBEDO      .98 .98 .98
+ALBEDO      .35 .35 .85
 METALLIC    0
-ROUGHNESS   0
+ROUGHNESS   0.5
 IOR         0
 
 // Camera
@@ -61,8 +61,8 @@ FOVY        45
 ITERATIONS  5000
 DEPTH       8
 FILE        cornell
-EYE         -5 5 10.5
-LOOKAT      0 5 0
+EYE         0 2 5
+LOOKAT      0 2 0
 UP          0 1 0
 
 // Back wall
@@ -115,8 +115,8 @@ SCALE       .01 10 10
 
 // Sphere
 OBJECT 6
-..\scenes\model\bunny.obj
-material 6
-TRANS       1 2 2
+..\scenes\model\bunny2.obj
+material 5
+TRANS       0 0 0
 ROTAT       0 0 0
-SCALE       1 1 1
+SCALE       2 2 2
