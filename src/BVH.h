@@ -2,7 +2,7 @@
 #ifndef BVH_H
 #define BVH_H
 
-#define MAX_PRIM 80
+#define MAX_PRIM 20
 #define BUCKET_NUM 20
 
 #include"utilities.h"

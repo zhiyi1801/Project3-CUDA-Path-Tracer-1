@@ -135,7 +135,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		segment.ray.origin = cam.position;
 		segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
-		thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+		thrust::default_random_engine rng = makeSeededRandomEngine(x, y, iter);
 		thrust::uniform_real_distribution<float> u01(0, 1);
 
 		// TODO: implement antialiasing by jittering the ray
@@ -226,17 +226,18 @@ __global__ void computeIntersections(
 		offset = offset + (dir[offset] > 0 ? 0 : 3);
 		offset *= dev_scene->bvh_size;
 #endif
+		GpuBVHNode* curBVH = gpuBVH + offset;
 		while (bvhIdx != -1)
 		{
-			if (!(gpuBVH[bvhIdx + offset].bBox.IntersectP(pathSegment.ray, tempT)) || tempT > t_min)
+			if (!(curBVH[bvhIdx].bBox.IntersectP(pathSegment.ray, tempT)) || tempT > t_min)
 			{
-				bvhIdx = gpuBVH[bvhIdx + offset].miss;
+				bvhIdx = curBVH[bvhIdx].miss;
 				continue;
 			}
 			//it indicates gpuBVH[bvhIdx] is a leaf node
-			if (gpuBVH[bvhIdx + offset].end - gpuBVH[bvhIdx + offset].start <= MAX_PRIM)
+			if (curBVH[bvhIdx].end - curBVH[bvhIdx].start <= MAX_PRIM)
 			{
-				for (triangleId = gpuBVH[bvhIdx + offset].start; triangleId < gpuBVH[bvhIdx + offset].end; ++triangleId)
+				for (triangleId = curBVH[bvhIdx].start; triangleId < curBVH[bvhIdx].end; ++triangleId)
 				{
 					tempTri = triangles[triangleId];
 					float u, v;
@@ -251,7 +252,7 @@ __global__ void computeIntersections(
 					}
 				}
 			}
-			bvhIdx = gpuBVH[bvhIdx + offset].hit;
+			bvhIdx = curBVH[bvhIdx].hit;
 		}
 #else
 		for (int i = 0; i < dev_scene->tri_num; ++i)

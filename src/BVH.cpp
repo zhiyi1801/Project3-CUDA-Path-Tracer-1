@@ -21,18 +21,23 @@ RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const in
 	std::vector<BucketInfo> buckets;
 	buckets.resize(BUCKET_NUM);
 	RecursiveBVHNode* root = new RecursiveBVHNode();
+	glm::vec3 centerMin(FLT_MAX), centerMax(-FLT_MAX);
 	root->start = start;
 	root->end = end;
 	for (int i = start; i < end; ++i)
 	{
 		root->bBox.Union(t[i].getBound());
+		centerMin = glm::min(centerMin, t[i].Centroid());
+		centerMax = glm::max(centerMax, t[i].Centroid());
 	}
-	if (end - start <= MAX_PRIM)
+
+	Bounds3 centerBox(centerMin, centerMax);
+	int maxExtent = centerBox.MaxExtent();
+
+	if (end - start <= glm::max(MAX_PRIM, 1))
 	{
 		return root;
 	}
-
-	int maxExtent = root->bBox.MaxExtent();
 	std::sort(t.begin() + start, t.begin() + end, [maxExtent](const Triangle& lhs, const Triangle& rhs) {
 		return lhs.getBound().Centroid()[maxExtent] < rhs.getBound().Centroid()[maxExtent];
 		});
@@ -41,8 +46,8 @@ RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const in
 	int mid = 0;
 	for (int i = start; i < end; ++i)
 	{
-		float offset = (t[i].getBound().Centroid()[maxExtent] - root->bBox.pMin[maxExtent]) / (root->bBox.pMax[maxExtent] - root->bBox.pMin[maxExtent]);
-		int bucketIdx = std::min(BUCKET_NUM - 1, int(floor(offset * BUCKET_NUM)));
+		float offset = glm::clamp((t[i].Centroid()[maxExtent] - centerBox.pMin[maxExtent]) / (centerBox.pMax[maxExtent] - centerBox.pMin[maxExtent]), 0.f, 1.f);
+		int bucketIdx = offset == 1.f ? BUCKET_NUM - 1 : static_cast<int>(offset * BUCKET_NUM);
 		buckets[bucketIdx].num += 1;
 		buckets[bucketIdx].bBox.Union(t[i].getBound());
 	}
@@ -63,7 +68,7 @@ RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const in
 			numR += buckets[j].num;
 		}
 		tempLoss = (numL * bBoxL.SurfaceArea() + numR * bBoxR.SurfaceArea()) / root->bBox.SurfaceArea();
-		if (tempLoss < Loss)
+		if (tempLoss < Loss && numL != 0 && numR != 0)
 		{
 			Loss = tempLoss;
 			mid = start + numL;

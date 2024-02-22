@@ -61,7 +61,14 @@ public:
 	{
 		glm::vec3 d = Diagonal();
 		double area = 2 * ((double)d.x * (double)d.y + (double)d.y * (double)d.z + (double)d.z * (double)d.x);
+		if (!this->isValid()) return 0;
 		return area;
+	}
+	__host__ __device__
+	bool isValid()
+	{
+		if (pMin.x > pMax.x || pMin.y > pMin.y || pMin.z > pMin.z) return false;
+		return true;
 	}
 
 	__host__ __device__
@@ -271,5 +278,11 @@ public:
 		if (t < 0 || u < 0 || v < 0 || (1 - u - v) < 0) return false;
 
 		return true;
+	}
+
+	__host__ __device__
+		glm::vec3 Centroid()
+	{
+		return (v[0] + v[1] + v[2]) / 3.f;
 	}
 };

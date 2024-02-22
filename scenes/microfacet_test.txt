@@ -115,7 +115,7 @@ SCALE       .01 10 10
 
 // Sphere
 OBJECT 6
-..\scenes\model\bunny2.obj
+..\scenes\model\bunny_large.obj
 material 5
 TRANS       0 0 0
 ROTAT       0 0 0
