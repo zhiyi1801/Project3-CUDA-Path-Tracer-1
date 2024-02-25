@@ -14,6 +14,7 @@
 #define TWO_PI            6.2831853071795864769252867665590057683943f
 #define SQRT_OF_ONE_THIRD 0.5773502691896257645091487805019574556476f
 #define EPSILON           0.0001f
+#define RAY_BIAS          0.001f
 #define InvPI             1.f/PI
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
@@ -22,7 +23,7 @@
 #define USE_SAH 1
 #define USE_MTBVH 1
 #define TONEMAPPING 0
-#define VERTEX_NORMAL 1
+#define VERTEX_NORMAL 0
 #define SHOW_NORMAL 0
 
 using Sampler = thrust::default_random_engine;
@@ -84,44 +85,59 @@ namespace utilityCore {
     extern std::istream& safeGetline(std::istream& is, std::string& t); //Thanks to http://stackoverflow.com/a/6089413
 }
 
+namespace math {void localRefMatrix_Pixar(const glm::vec3& n, glm::vec3& xp, glm::vec3& yp); };
+
 /// <summary>
 /// An orthonormal basis (ONB)
 /// </summary>
 class ONB {
 public:
     __host__ __device__
-    ONB() {}
+        ONB() {}
 
     __host__ __device__
-    glm::vec3 operator[](int i) const { return axis[i]; }
+        glm::vec3 operator[](int i) const { return axis[i]; }
     __host__ __device__
-    glm::vec3& operator[](int i) { return axis[i]; }
+        glm::vec3& operator[](int i) { return axis[i]; }
 
     __host__ __device__
-    glm::vec3 u() const { return axis[0]; }
+        glm::vec3 u() const { return axis[0]; }
 
     __host__ __device__
-    glm::vec3 v() const { return axis[1]; }
+        glm::vec3 v() const { return axis[1]; }
 
     __host__ __device__
-    glm::vec3 w() const { return axis[2]; }
+        glm::vec3 w() const { return axis[2]; }
 
     __host__ __device__
-    glm::vec3 local(float a, float b, float c) const {
+        glm::vec3 local(float a, float b, float c) const {
         return a * u() + b * v() + c * w();
     }
 
     __host__ __device__
-    glm::vec3 local(const glm::vec3& a) const {
+        glm::vec3 local(const glm::vec3& a) const {
         return a.x * u() + a.y * v() + a.z * w();
     }
 
     __host__ __device__
-    void build_from_w(const glm::vec3& w) {
+        void build_from_w(const glm::vec3& w) {
         glm::vec3 unit_w = glm::normalize(w);
         glm::vec3 a = (fabs(unit_w.x) > 0.9) ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
         glm::vec3 v = glm::normalize(cross(unit_w, a));
-        glm::vec3 u = cross(unit_w, v);
+        glm::vec3 u = cross(v, unit_w);
+        axis[0] = u;
+        axis[1] = v;
+        axis[2] = unit_w;
+    }
+
+    __host__ __device__
+        void build_from_w_Pixar(const glm::vec3& w) {
+        glm::vec3 u, v;
+        glm::vec3 unit_w = glm::normalize(w);
+        math::localRefMatrix_Pixar(w, u, v);
+
+        volatile float u1 = u.x, u2 = u.y, u3 = u.z, v1 = v.x, v2 = v.y, v3 = v.z;
+
         axis[0] = u;
         axis[1] = v;
         axis[2] = unit_w;
@@ -140,11 +156,33 @@ namespace math
         return (1 - x) * a + x * b;
     }
 
-    __host__ __device__ static glm::mat3 localRefMatrix(const glm::vec3 &n) {
+    __host__ __device__ static void localRefMatrix(const glm::vec3& n, glm::vec3& xp, glm::vec3& yp) {
         glm::vec3 t = (glm::abs(n.x) > 0.9f) ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
         glm::vec3 b = glm::normalize(glm::cross(n, t));
         t = glm::cross(b, n);
+        xp = t;
+        yp = n;
+    }
+
+    __host__ __device__ static glm::mat3 localRefMatrix(const glm::vec3 &n) {
+        glm::vec3 t, b;
+        localRefMatrix(n, t, b);
         return glm::mat3(t, b, n);
+    }
+
+    //https://marc-b-reynolds.github.io/quaternions/2016/07/06/Orthonormal.html#fn:frisvad
+    __host__ __device__ static void localRefMatrix_Pixar(const glm::vec3& n, glm::vec3& xp, glm::vec3& yp)
+    {
+        // -- snip start --
+        float x = n.x, y = n.y, z = n.z;
+        float sz = z >= 0 ? 1.f : -1.f;
+        float a = 1.0f / (sz + z);
+        // -- snip end --
+        float sx = sz * x;     // shouldn't be needed but is for gcc & clang, saves 2 issues
+        float b = x * y * a;
+
+        xp = glm::vec3(sx * x * a - 1.f, sz * b, sx);  // {z+y/(z+1),   -xy/(z+1), -x}
+        yp = glm::vec3(b, y * y * a - sz, y);  // {-xy/(z+1), 1-y^2/(z+1), -y}
     }
 
     __host__ __device__ inline glm::vec2 sphere2Plane(const glm::vec3 &dir) {
@@ -154,21 +192,16 @@ namespace math
         );
     }
 
-    /// <summary>
-    /// get a cosine weighted sample in a hemisphere with normal n
-    /// </summary>
-    /// <param name="n"> the normal direction </param>
-    /// <returns> a vec3 direction sample </returns>
     __host__ __device__
         inline glm::vec3 sampleHemisphereCosine(const glm::vec3& n, glm::vec2 r)
     {
         ONB uvw;
-        uvw.build_from_w(n);
+        uvw.build_from_w_Pixar(n);
         float r1 = r.x, r2 = r.y;
         float sinTheta = glm::sqrt(r1), cosTheta = sqrt(1 - r1);
         float phi = TWO_PI * r2;
         glm::vec3 xyz(sinTheta * glm::cos(phi), sinTheta * glm::sin(phi), cosTheta);
-
+        volatile float f1 = xyz.x, f2 = xyz.y, f3 = xyz.z;
         return uvw.local(xyz);
     }
 
@@ -176,7 +209,7 @@ namespace math
         inline glm::vec3 sampleHemisphereUniform(const glm::vec3& n, Sampler& sampler)
     {
         ONB uvw;
-        uvw.build_from_w(n);
+        uvw.build_from_w_Pixar(n);
         float r1 = sample1D(sampler), r2 = sample1D(sampler);
         float cosTheta = 1 - r1, sinTheta = glm::sqrt(1 - cosTheta * cosTheta);
         float phi = TWO_PI * r2;

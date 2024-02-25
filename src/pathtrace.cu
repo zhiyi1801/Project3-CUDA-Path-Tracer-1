@@ -29,16 +29,19 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
+	volatile float p1 = 1, p2 = 1, p3 = 1;
+	volatile float c1 = 1, c2 = 1, c3 = 1;
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
 		glm::vec3 pix = image[index];
 
 		glm::vec3 color;
-
+		p1 = pix.x, p2 = pix.y, p3 = pix.z;
 #if TONEMAPPING
 		color = pix / (float)iter;
 		color = gammaCorrection(ACESFilm(color));
 		color = color * 255.0f;
+		c1 = color.x, c2 = color.y, c3 = color.z;
 #else
 		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
 		color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
@@ -167,7 +170,7 @@ __global__ void computeIntersections(
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 	volatile int textID = pathSegments[path_index].pixelIndex;
 
-	volatile float n1 = 1, n2 = 1, n3 = 1;
+	volatile float n1 = 1, n2 = 1, n3 = 1, c1 = 1, c2 = 1, c3 = 1;
 	if (path_index < num_paths)
 	{
 		PathSegment pathSegment = pathSegments[path_index];
@@ -284,6 +287,7 @@ __global__ void computeIntersections(
 			if (dev_scene->envMapID >= 0)
 			{
 				img[pathSegments[path_index].pixelIndex] += pathSegments[path_index].color * dev_scene->dev_textures->linearSample(math::sphere2Plane(pathSegment.ray.direction));
+				c1 = img[pathSegments[path_index].pixelIndex].x, c2 = img[pathSegments[path_index].pixelIndex].y, c3 = img[pathSegments[path_index].pixelIndex].z;
 			}
 		}
 		else
@@ -326,6 +330,8 @@ __global__ void shadeFakeMaterial(
 	volatile float n1 = shadeableIntersections[idx].surfaceNormal.x, n2 = shadeableIntersections[idx].surfaceNormal.y, n3 = shadeableIntersections[idx].surfaceNormal.z;
 	volatile float p1 = shadeableIntersections[idx].interPoint.x, p2 = shadeableIntersections[idx].interPoint.y, p3 = shadeableIntersections[idx].interPoint.z;
 	volatile int mid = shadeableIntersections[idx].materialId;
+	volatile float ic1 = img[pathSegments[idx].pixelIndex].x, ic2 = img[pathSegments[idx].pixelIndex].y, ic3 = img[pathSegments[idx].pixelIndex].z;
+	volatile float b1 = 1, b2 = 1, b3 = 1, tmppdf = 1;
 	//volatile float off1 = p1, off2 = p2, off3 = p3, testt = shadeableIntersections[idx].t;
 	if (idx < num_paths)
 	{ 
@@ -359,10 +365,14 @@ __global__ void shadeFakeMaterial(
 				glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;
 				pathSegments[idx].ray.direction = srec.dir;
 				pathSegments[idx].ray.origin = intersection.interPoint + 
-												(mType == Material::Type::Dielectric ? 10 : 1) * EPSILON * srec.dir;
-
+												(mType == Material::Type::Dielectric ? 100 : 1) * RAY_BIAS * offsetDir;
 				pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
+				b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z, tmppdf = srec.pdf;
+				d1 = glm::abs(glm::dot(srec.dir, intersection.surfaceNormal));
 				rayValid[idx] = 1;
+				d1 = srec.dir.x, d2 = srec.dir.y, d3 = srec.dir.z;
+				ic1 = offsetDir.x, ic2 = offsetDir.y, ic3 = offsetDir.z;
+				o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
 
 				if (--(pathSegments[idx].remainingBounces) == 0)
 				{
@@ -409,6 +419,7 @@ struct remain_bounce
 // from Andrew Yang https://github.com/bdwhst/Project3-CUDA-Path-Tracer
 int compact_rays(int* rayValid, int* rayIndex, int numRays)
 {
+	if (numRays == 0) return 0;
 	thrust::device_ptr<PathSegment> dev_thrust_paths1(dev_paths1), dev_thrust_paths2(dev_paths2);
 	thrust::device_ptr<ShadeableIntersection> dev_thrust_intersections1(dev_intersections1), dev_thrust_intersections2(dev_intersections2);
 	thrust::device_ptr<int> dev_thrust_rayValid(rayValid), dev_thrust_rayIndex(rayIndex);
