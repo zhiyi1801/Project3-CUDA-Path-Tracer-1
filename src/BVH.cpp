@@ -38,20 +38,22 @@ RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const in
 	{
 		return root;
 	}
-	std::sort(t.begin() + start, t.begin() + end, [maxExtent](const Triangle& lhs, const Triangle& rhs) {
-		return lhs.getBound().Centroid()[maxExtent] < rhs.getBound().Centroid()[maxExtent];
-		});
+	//std::sort(t.begin() + start, t.begin() + end, [maxExtent](const Triangle& lhs, const Triangle& rhs) {
+	//	return lhs.getBound().Centroid()[maxExtent] < rhs.getBound().Centroid()[maxExtent];
+	//	});
 
 	float Loss = FLT_MAX;
 	int mid = 0;
+	float boxDia = centerBox.pMax[maxExtent] - centerBox.pMin[maxExtent];
 	for (int i = start; i < end; ++i)
 	{
-		float offset = glm::clamp((t[i].Centroid()[maxExtent] - centerBox.pMin[maxExtent]) / (centerBox.pMax[maxExtent] - centerBox.pMin[maxExtent]), 0.f, 1.f);
+		float offset = glm::clamp((t[i].Centroid()[maxExtent] - centerBox.pMin[maxExtent]) / (boxDia), 0.f, 1.f);
 		int bucketIdx = offset == 1.f ? BUCKET_NUM - 1 : static_cast<int>(offset * BUCKET_NUM);
 		buckets[bucketIdx].num += 1;
 		buckets[bucketIdx].bBox.Union(t[i].getBound());
 	}
 
+	int partitionBucket = 0;
 	for (int i = 0; i < BUCKET_NUM - 1; ++i)
 	{
 		Bounds3 bBoxL{}, bBoxR{};
@@ -71,14 +73,21 @@ RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const in
 		if (tempLoss < Loss && numL != 0 && numR != 0)
 		{
 			Loss = tempLoss;
-			mid = start + numL;
+			//mid = start + numL;
+			partitionBucket = i;
 		}
 	}
+
+	std::vector<Triangle>::iterator bound = std::partition(t.begin() + start, t.begin() + end, [&](const Triangle& tri) {
+		float offset = glm::clamp((tri.Centroid()[maxExtent] - centerBox.pMin[maxExtent]) / (boxDia), 0.f, 1.f);
+		int bucketIdx = offset == 1.f ? BUCKET_NUM - 1 : static_cast<int>(offset * BUCKET_NUM);
+		return bucketIdx <= partitionBucket;
+		});
+	mid = bound - t.begin();
 	assert(mid >= start && mid <= end);
 	root->leftChild = recursiveBuildSAH(t, start, mid);
 	root->rightChild = recursiveBuildSAH(t, mid, end);
 
-	//root->bBox = Union(root->leftChild->bBox, root->rightChild->bBox);
 	return root;
 }
 

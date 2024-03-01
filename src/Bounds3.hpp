@@ -118,6 +118,9 @@ public:
 	inline bool IntersectP(const Ray& ray, float& t);
 
 	__host__ __device__
+	inline bool IntersectP2(const Ray& ray, float& t);
+
+	__host__ __device__
 	Bounds3& Union(const Bounds3& b)
 	{
 		pMin = glm::min(pMin, b.pMin);
@@ -160,21 +163,21 @@ inline bool Bounds3::IntersectP(const Ray& ray, float& t)
 {
 	glm::vec3 o = ray.origin;
 	const glm::vec3 invDir = 1.0f / ray.direction;
-	double tEnter = std::numeric_limits<double>::lowest();
-	double tExit = std::numeric_limits<double>::max();
+	float tEnter = std::numeric_limits<float>::lowest();
+	float tExit = std::numeric_limits<float>::max();
 
 	for (int i = 0; i < 3; ++i)
 	{
-		double tMax;
-		double tMin;
+		float tMax;
+		float tMin;
 		if (ray.direction[i] == 0)
 		{
 			if (o[i] < pMin[i] || o[i] > pMax[i]) return false;
 		}
 		else
 		{
-			tMax = ((double)pMax[i] - o[i]) * invDir[i];
-			tMin = ((double)pMin[i] - o[i]) * invDir[i];
+			tMax = (pMax[i] - o[i]) * invDir[i];
+			tMin = (pMin[i] - o[i]) * invDir[i];
 			if (ray.direction[i] < 0) thrust::swap(tMax, tMin);
 			tEnter = tMin > tEnter ? tMin : tEnter;
 			tExit = tMax < tExit ? tMax : tExit;
@@ -182,6 +185,46 @@ inline bool Bounds3::IntersectP(const Ray& ray, float& t)
 	}
 	t = tEnter;
 	return tEnter <= tExit && tExit > 0;
+}
+
+__host__ __device__
+inline bool Bounds3::IntersectP2(const Ray& ray, float& t)
+{
+	float tmin = -1e38f;
+	float tmax = 1e38f;
+	glm::vec3 tmin_n;
+	glm::vec3 tmax_n;
+
+	for (int xyz = 0; xyz < 3; ++xyz) {
+		float qdxyz = ray.direction[xyz];
+		{
+			float t1 = (pMin[xyz] - ray.origin[xyz]) / qdxyz;
+			float t2 = (pMax[xyz] - ray.origin[xyz]) / qdxyz;
+			float ta = glm::min(t1, t2);
+			float tb = glm::max(t1, t2);
+			glm::vec3 n;
+			n[xyz] = t2 < t1 ? +1 : -1;
+			if (ta > 0 && ta > tmin) {
+				tmin = ta;
+				tmin_n = n;
+			}
+			if (tb < tmax) {
+				tmax = tb;
+				tmax_n = n;
+			}
+		}
+	}
+	if (tmax >= tmin && tmax > 0) {
+		if (tmin <= 0) {
+			tmin = tmax;
+			t = 1e-5;
+			return true;
+			tmin_n = tmax_n;
+		}
+		t = tmin;
+		return true;
+	}
+	return false;
 }
 
 __host__ __device__
@@ -281,7 +324,7 @@ public:
 	}
 
 	__host__ __device__
-		glm::vec3 Centroid()
+		glm::vec3 Centroid() const
 	{
 		return (v[0] + v[1] + v[2]) / 3.f;
 	}

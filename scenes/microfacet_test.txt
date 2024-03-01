@@ -19,7 +19,7 @@ MATERIAL 2
 TYPE	    Lambertian
 ALBEDO      .85 .35 .35
 METALLIC    0
-ROUGHNESS   0
+ROUGHNESS   0.8
 IOR         0
 
 // Diffuse green

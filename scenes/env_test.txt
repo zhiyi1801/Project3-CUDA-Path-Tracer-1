@@ -1,6 +1,6 @@
 // dielectric
 MATERIAL 0
-TYPE	    Microfacet
+TYPE	    Dielectric
 ALBEDO      .98 .98 .98
 METALLIC    0
 ROUGHNESS   1

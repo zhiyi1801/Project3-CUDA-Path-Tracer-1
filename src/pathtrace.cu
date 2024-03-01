@@ -7,6 +7,7 @@
 #include <thrust/partition.h>
 #include <device_launch_parameters.h>
 #include <thrust/device_ptr.h>
+#include <windows.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -230,8 +231,10 @@ __global__ void computeIntersections(
 		offset *= dev_scene->bvh_size;
 #endif
 		GpuBVHNode* curBVH = gpuBVH + offset;
+		volatile int count = 0;
 		while (bvhIdx != -1)
 		{
+			count++;
 			if (!(curBVH[bvhIdx].bBox.IntersectP(pathSegment.ray, tempT)) || tempT > t_min)
 			{
 				bvhIdx = curBVH[bvhIdx].miss;
@@ -312,7 +315,7 @@ __global__ void computeIntersections(
 // Note that this shader does NOT do a BSDF evaluation!
 // Your shaders should handle that - this can allow techniques such as
 // bump mapping.
-__global__ void shadeFakeMaterial(
+__global__ void PTkernel(
 	int iter
 	, int num_paths
 	, ShadeableIntersection* shadeableIntersections
@@ -499,6 +502,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	// --- PathSegment Tracing Stage ---
 	// Shoot ray into scene, bounce between objects, push shading chunks
 	bool iterationComplete = false;
+	LARGE_INTEGER t1, t2, tc;
 	while (!iterationComplete) {
 
 		// clean shading chunks
@@ -506,6 +510,9 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 
 		// tracing
 		dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
+		//QueryPerformanceFrequency(&tc);
+		//QueryPerformanceCounter(&t1);
+
 		computeIntersections << <numblocksPathSegmentTracing, blockSize1d >> > (
 			depth
 			, num_paths
@@ -521,6 +528,10 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 		cudaDeviceSynchronize();
 		depth++;
 
+		//QueryPerformanceCounter(&t2);
+		//double time = (double)(t2.QuadPart - t1.QuadPart) / (double)tc.QuadPart;
+		//cout << "time1 = " << time << endl;
+
 		num_paths = compact_rays(rayValid, rayIndex, num_paths);
 
 		// TODO:
@@ -532,7 +543,8 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	  // TODO: compare between directly shading the path segments and shading
 	  // path segments that have been reshuffled to be contiguous in memory.
 
-		shadeFakeMaterial << <numblocksPathSegmentTracing, blockSize1d >> > (
+		//QueryPerformanceCounter(&t1);
+		PTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
 			iter,
 			num_paths,
 			dev_intersections1,
@@ -541,6 +553,10 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			rayValid,
 			dev_image
 			);
+		//QueryPerformanceCounter(&t2);
+		//time = (double)(t2.QuadPart - t1.QuadPart) / (double)tc.QuadPart;
+		//cout << "time2 = " << time << endl;
+
 		num_paths = compact_rays(rayValid, rayIndex, num_paths);
 		iterationComplete = (num_paths == 0); // TODO: should be based off stream compaction results.
 

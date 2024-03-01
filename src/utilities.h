@@ -161,7 +161,7 @@ namespace math
         glm::vec3 b = glm::normalize(glm::cross(n, t));
         t = glm::cross(b, n);
         xp = t;
-        yp = n;
+        yp = b;
     }
 
     __host__ __device__ static glm::mat3 localRefMatrix(const glm::vec3 &n) {
@@ -183,6 +183,13 @@ namespace math
 
         xp = glm::vec3(sx * x * a - 1.f, sz * b, sx);  // {z+y/(z+1),   -xy/(z+1), -x}
         yp = glm::vec3(b, y * y * a - sz, y);  // {-xy/(z+1), 1-y^2/(z+1), -y}
+    }
+
+    __host__ __device__ static glm::mat3 localRefMatrix_Pixar(const glm::vec3& n)
+    {
+        glm::vec3 t, b;
+        localRefMatrix_Pixar(n, t, b);
+        return glm::mat3(t, b, n);
     }
 
     __host__ __device__ inline glm::vec2 sphere2Plane(const glm::vec3 &dir) {
@@ -307,7 +314,7 @@ namespace math
     */
     __host__ __device__  inline glm::vec3 sampleNormalGGX(const glm::vec3 &n, const glm::vec3 &wo, float alpha, const glm::vec2 &r)
     {
-        glm::mat3 local2world = math::localRefMatrix(n);
+        glm::mat3 local2world = math::localRefMatrix_Pixar(n);
         glm::mat3 world2local = glm::transpose(local2world);
 
         glm::vec3 whL = glm::normalize(glm::vec3(alpha, alpha, 1.f) * (world2local * wo));
@@ -363,5 +370,17 @@ namespace math
         float denom = cosTheta * cosTheta * (a2 - 1.f) + 1.f;
         denom = denom * denom * PI;
         return nom / denom;
+    }
+
+    __host__ __device__  inline float powerHeuristic(float fPdf, float gPdf)
+    {
+        float f = fPdf, g = gPdf;
+        return (f * f) / (f * f + g * g);
+    }
+
+    __host__ __device__  inline float balanceHeuristic(float fPdf, float gPdf)
+    {
+        float f = fPdf, g = gPdf;
+        return (f) / (f + g);
     }
 }
