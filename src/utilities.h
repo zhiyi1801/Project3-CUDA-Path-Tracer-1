@@ -25,6 +25,8 @@
 #define TONEMAPPING 1
 #define VERTEX_NORMAL 0
 #define SHOW_NORMAL 0
+#define MIS_SAMPLE 0
+#define LIGHT_SAMPLE 0
 
 using Sampler = thrust::default_random_engine;
 using color = glm::vec3;

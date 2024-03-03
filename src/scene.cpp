@@ -82,7 +82,7 @@ int Scene::loadGeom(string objectName) {
     }
     if (geomNameMap.find(objectName) != geomNameMap.end())
     {
-        cout << "ERROR: MATERIAL Name already exists" << endl;
+        cout << "ERROR: OBJECT Name already exists" << endl;
         return -1;
     }
     else {

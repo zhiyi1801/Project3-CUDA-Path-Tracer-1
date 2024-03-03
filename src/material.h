@@ -114,7 +114,6 @@ public:
         float G2 = math::SmithG2(sampleRoughness, cosO, cosI);
         glm::vec3 F = math::FresnelSchilick(sampleAlbedo, glm::dot(wo, wm));
         glm::vec3 ret = F * D * G2 / glm::max(4 * cosO * cosI, 1e-8f);
-        volatile float r1 = ret.r, r2 = ret.g, r3 = ret.b;
         return F * D * G2 / glm::max(4 * cosO * cosI, 1e-8f);
     }
 
@@ -130,7 +129,6 @@ public:
 
     __host__ __device__ void microfacetScatterSample(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler, const glm::vec2& uv)
     {
-        volatile float n1 = n.x, n2 = n.y, n3 = n.z;
         glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, roughness, sample2D(sampler));
         srec.dir = glm::reflect(wo, wm);
         if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
@@ -145,6 +143,23 @@ public:
         srec.pdf = microfacetPDF(n, -1.f * wo, srec.dir, sampleRoughness);
     }
 
+    __host__ __device__ void metallicScatterSample(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler, const glm::vec2& uv)
+    {
+        glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, roughness, sample2D(sampler));
+        srec.dir = glm::reflect(wo, wm);
+        if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
+        {
+            srec.bsdf = glm::vec3(0);
+            srec.pdf = 0;
+            return;
+        }
+        float sampleRoughness = roughnessSampler.linearSample(uv).x;
+        float sampleMetallic = metallicSampler.linearSample(uv).x;
+        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+        srec.bsdf = microfacetBSDF(n, -1.f * wo, srec.dir, sampleAlbedo, sampleRoughness);
+        srec.pdf = microfacetPDF(n, -1.f * wo, srec.dir, sampleRoughness);
+    }
+
     __host__ __device__ bool scatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler, const glm::vec2 &uv = glm::vec2(0.f))
     {
         switch (type)
@@ -154,6 +169,7 @@ public:
             return true;
             break;
         case Material::MetallicWorkflow:
+            metallicScatterSample(n, wo, srec, sampler, uv);
             break;
         case Material::Dielectric:
             dielectricScatterSample(n, wo, srec, sampler, uv);
