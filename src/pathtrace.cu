@@ -157,6 +157,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 // Generating new rays is handled in your shader(s).
 // Feel free to modify the code below.
 __global__ void computeIntersections(
+	int iter,
 	int depth
 	, int num_paths
 	, PathSegment* pathSegments
@@ -179,6 +180,7 @@ __global__ void computeIntersections(
 		float t = -1;
 		glm::vec3 intersect_point;
 		glm::vec3 normal;
+		glm::vec2 texCoords;
 		float t_min = FLT_MAX;
 		int hit_geom_index = -1;
 		bool outside = true;
@@ -255,6 +257,7 @@ __global__ void computeIntersections(
 						intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
 						intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
 						normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
+						texCoords = (1 - u - v) * tempTri.tex[0] + u * tempTri.tex[1] + v * tempTri.tex[2];
 					}
 				}
 			}
@@ -289,7 +292,7 @@ __global__ void computeIntersections(
 			rayValid[path_index] = 0;
 			if (dev_scene->envMapID >= 0)
 			{
-				img[pathSegments[path_index].pixelIndex] += pathSegments[path_index].color * dev_scene->dev_textures->linearSample(math::sphere2Plane(pathSegment.ray.direction));
+				img[pathSegments[path_index].pixelIndex] += pathSegments[path_index].color * dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction));
 				c1 = img[pathSegments[path_index].pixelIndex].x, c2 = img[pathSegments[path_index].pixelIndex].y, c3 = img[pathSegments[path_index].pixelIndex].z;
 			}
 		}
@@ -300,6 +303,7 @@ __global__ void computeIntersections(
 			intersections[path_index].interPoint = intersect_point;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
 			intersections[path_index].surfaceNormal = glm::normalize(normal);
+			intersections[path_index].texCoords = glm::clamp(texCoords, 0.f, 1.f);
 			rayValid[path_index] = 1;
 		}
 #endif // SHOW_NORMAL
@@ -317,6 +321,7 @@ __global__ void computeIntersections(
 // bump mapping.
 __global__ void PTkernel(
 	int iter
+	, int depth
 	, int num_paths
 	, ShadeableIntersection* shadeableIntersections
 	, PathSegment* pathSegments
@@ -343,10 +348,10 @@ __global__ void PTkernel(
 		  // Set up the RNG
 		  // LOOK: this is how you use thrust's RNG! Please look at
 		  // makeSeededRandomEngine as well.
-			Sampler rng = makeSeededRandomEngine(iter, idx, 0);
+			Sampler rng = makeSeededRandomEngine(iter, idx, depth);
 
 			scatter_record srec;
-			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng, iter);
+			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng, intersection.texCoords);
 			Material::Type mType = materials[intersection.materialId].type;
 			if (srec.pdf == 0)
 			{
@@ -514,7 +519,8 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 		//QueryPerformanceCounter(&t1);
 
 		computeIntersections << <numblocksPathSegmentTracing, blockSize1d >> > (
-			depth
+			iter
+			, depth
 			, num_paths
 			, dev_paths1
 			, dev_geoms
@@ -546,6 +552,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 		//QueryPerformanceCounter(&t1);
 		PTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
 			iter,
+			depth,
 			num_paths,
 			dev_intersections1,
 			dev_paths1,

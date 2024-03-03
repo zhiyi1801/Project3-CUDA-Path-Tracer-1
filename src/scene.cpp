@@ -74,10 +74,15 @@ Scene::Scene(const string& filename) {
 
 }
 
-int Scene::loadGeom(string objectid) {
-    int id = atoi(objectid.c_str());
+int Scene::loadGeom(string objectName) {
+    int id = geoms.size();
     if (id != geoms.size()) {
         cout << "ERROR: OBJECT ID does not match expected number of geoms" << endl;
+        return -1;
+    }
+    if (geomNameMap.find(objectName) != geomNameMap.end())
+    {
+        cout << "ERROR: MATERIAL Name already exists" << endl;
         return -1;
     }
     else {
@@ -110,8 +115,15 @@ int Scene::loadGeom(string objectid) {
         utilityCore::safeGetline(fp_in, line);
         if (!line.empty() && fp_in.good()) {
             vector<string> tokens = utilityCore::tokenizeString(line);
-            newGeom.materialid = atoi(tokens[1].c_str());
-            cout << "Connecting Geom " << objectid << " to Material " << newGeom.materialid << "..." << endl;
+            if (materialNameMap.find(tokens[1]) != materialNameMap.end())
+            {
+                newGeom.materialid = materialNameMap[tokens[1]];
+            }
+            else
+            {
+                newGeom.materialid = atoi(tokens[1].c_str());
+            }
+            cout << "Connecting Geom " << id << ": " << objectName << " to Material " << newGeom.materialid << "..." << endl;
         }
 
         //load transformations
@@ -139,6 +151,7 @@ int Scene::loadGeom(string objectid) {
         newGeom.invTranspose = glm::inverseTranspose(newGeom.transform);
 
         geoms.push_back(newGeom);
+        geomNameMap[objectName] = id;
         return 1;
     }
 }
@@ -214,14 +227,19 @@ int Scene::loadCamera() {
 /// </summary>
 /// <param name="materialid"></param>
 /// <returns></returns>
-int Scene::loadMaterial(string materialid) {
-    int id = atoi(materialid.c_str());
+int Scene::loadMaterial(string materialName) {
+    int id = materials.size();
     if (id != materials.size()) {
         cout << "ERROR: MATERIAL ID does not match expected number of materials" << endl;
         return -1;
     }
+    if (materialNameMap.find(materialName) != materialNameMap.end())
+    {
+        cout << "ERROR: MATERIAL Name already exists" << endl;
+        return -1;
+    }
     else {
-        cout << "Loading Material " << id << "..." << endl;
+        cout << "Loading Material " << id << ": " << materialName << "..." << endl;
         Material newMaterial;
 
         //load static properties
@@ -241,19 +259,35 @@ int Scene::loadMaterial(string materialid) {
                 }
             }
             else if (strcmp(tokens[0].c_str(), "ALBEDO") == 0) {
-                newMaterial.albedo = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
+                newMaterial.albedoMapID = this->loadTexture(tokens[1]);
+                if (newMaterial.albedoMapID < 0)
+                {
+                   newMaterial.albedo = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
+                   newMaterial.albedoSampler = devTexSampler(newMaterial.albedo);
+                }
             }
             else if (strcmp(tokens[0].c_str(), "METALLIC") == 0) {
-                newMaterial.metallic = atof(tokens[1].c_str());
+                newMaterial.metallicMapID = this->loadTexture(tokens[1]);
+                if (newMaterial.metallicMapID < 0)
+                {
+                    newMaterial.metallic = atof(tokens[1].c_str());
+                    newMaterial.metallicSampler = devTexSampler(newMaterial.metallic);
+                }
             }
             else if (strcmp(tokens[0].c_str(), "ROUGHNESS") == 0) {
-                newMaterial.roughness = glm::max(atof(tokens[1].c_str()), 0.001);
+                newMaterial.roughnessMapID = this->loadTexture(tokens[1]);
+                if (newMaterial.roughnessMapID < 0)
+                {
+                    newMaterial.roughness = glm::max(atof(tokens[1].c_str()), 0.001);
+                    newMaterial.roughnessSampler = devTexSampler(newMaterial.roughness);
+                }
             }
             else if (strcmp(tokens[0].c_str(), "IOR") == 0) {
                 newMaterial.ior = atof(tokens[1].c_str());
             }
         }
         materials.push_back(newMaterial);
+        materialNameMap[materialName] = id;
         return 1;
     }
 }
@@ -262,6 +296,10 @@ int Scene::loadTexture(const string &fileName)
 {
     cout << "Loading texture: " + fileName + "\n";
     image* tex = Resource::loadTexture(fileName);
+    if (!tex)
+    {
+        return -1;
+    }
     auto texID = textureIdMap.find(tex);
     if (texID != textureIdMap.end())
     {
@@ -394,6 +432,10 @@ MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
                         * ((glm::vec2*)attrib.texcoords.data() + idx1.texcoord_index),
                         * ((glm::vec2*)attrib.texcoords.data() + idx2.texcoord_index) };
                 }
+                else
+                {
+                    std::cout << "--- This obj has no texcoords " << "---" << std::endl;
+                }
                 Triangle tri(_v, _n, _tex, _geomIdx);
                 model->triangles.push_back(tri);
                 //model->area += tri.area;
@@ -441,11 +483,15 @@ image* Resource::loadTexture(const std::string& filename) {
         return find->second;
     }
     auto texture = new image(filename);
+    if (!texture->pixels)
+    {
+        return nullptr;
+    }
     texturePool[filename] = texture;
     return texture;
 }
 
-void DevScene::initiate(const Scene& scene)
+void DevScene::initiate(Scene& scene)
 {
     tri_num = scene.triangles.size();
     bvh_size = scene.gpuBVHNodeInfos.size();
@@ -475,12 +521,41 @@ void DevScene::initiate(const Scene& scene)
         tempDevTextures.emplace_back(devTexObj(tex, dev_texture_data + offset));
         offset += tex->byteSize() / sizeof(glm::vec3);
     }
+    
     cudaMalloc(&dev_textures, tempDevTextures.size() * sizeof(devTexObj));
     checkCUDAError("DevScene::dev_textures::malloc");
+
     cudaMemcpy(dev_textures, tempDevTextures.data(), tempDevTextures.size() * sizeof(devTexObj), cudaMemcpyHostToDevice);
     checkCUDAError("DevScene::dev_textures::copy");
 
+    for (auto &mat : scene.materials)
+    {
+        if (mat.albedoMapID >= 0 && mat.albedoMapID < scene.textures.size())
+        {
+            mat.albedoSampler.tex = dev_textures + mat.albedoMapID;
+        }
+
+        if (mat.metallicMapID >= 0 && mat.metallicMapID < scene.textures.size())
+        {
+            mat.metallicSampler.tex = dev_textures + mat.metallicMapID;
+        }
+
+        if (mat.roughnessMapID >= 0 && mat.roughnessMapID < scene.textures.size())
+        {
+            mat.roughnessSampler.tex = dev_textures + mat.roughnessMapID;
+        }
+
+        if (mat.normalMapID >= 0 && mat.normalMapID < scene.textures.size())
+        {
+            mat.normalSampler.tex = dev_textures + mat.normalMapID;
+        }
+    }
+
     this->envMapID = scene.envMapID;
+    if (this->envMapID >= 0)
+    {
+        this->envSampler.tex = dev_textures + this->envMapID;
+    }
 }
 
 void DevScene::destroy()

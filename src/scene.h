@@ -26,7 +26,7 @@ class Scene;
 class DevScene
 {
 public:
-    void initiate(const Scene& scene);
+    void initiate(Scene& scene);
     void destroy();
 
     int tri_num;
@@ -39,6 +39,7 @@ public:
     glm::vec3* dev_texture_data;
 
     int envMapID = -1;
+    devTexSampler envSampler{0.f};
 };
 
 class Scene {
@@ -54,8 +55,10 @@ public:
     void clear();
 
     std::vector<Geom> geoms;
+    std::map<string, int> geomNameMap;
     std::vector<GPUGeom> gpuGeoms;
     std::vector<Material> materials;
+    std::map<string, int> materialNameMap;
     std::vector<Triangle> triangles;
     std::vector<image*> textures;
     std::map<image*, int> textureIdMap;

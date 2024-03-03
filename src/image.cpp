@@ -15,12 +15,14 @@ image::image(int x, int y) :
 image::image(std::string filePath)
 {
     int channels;
+    stbi_set_flip_vertically_on_load(true);
     float *data = stbi_loadf(filePath.c_str(), &xSize, &ySize, &channels, 3);
 
     if (!data)
     {
         std::cout << "\t[Fail to load image: " + filePath + "]" << stbi_failure_reason() <<  std::endl;
-        throw;
+        pixels = nullptr;
+        return;
     }
     pixels = new glm::vec3[xSize * ySize];
     memcpy(pixels, data, xSize * ySize * sizeof(glm::vec3));
@@ -29,7 +31,10 @@ image::image(std::string filePath)
 }
 
 image::~image() {
-    delete pixels;
+    if (pixels)
+    {
+       delete pixels;
+    }
 }
 
 void image::setPixel(int x, int y, const glm::vec3 &pixel) {
@@ -43,7 +48,7 @@ void image::savePNG(const std::string &baseFilename) {
         for (int x = 0; x < xSize; x++) { 
             int i = y * xSize + x;
             glm::vec3 pix = glm::clamp(pixels[i], glm::vec3(), glm::vec3(1)) * 255.f;
-#ifdef TONEMAPPING
+#if TONEMAPPING
             pix = gammaCorrection(ACESFilm(pix/255.0f));
             pix *= 255.0f;
 #endif // TONEMAPPING

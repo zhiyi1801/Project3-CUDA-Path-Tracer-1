@@ -43,12 +43,12 @@ public:
         data = devData;
     }
 
-    __device__ glm::vec3 getValue(int x, int y)
+    __host__ __device__ glm::vec3 getValue(int x, int y)
     {
         return data[y * width + x];
     }
 
-    __device__ glm::vec3 linearSample(glm::vec2 uv)
+    __host__ __device__ glm::vec3 linearSample(const glm::vec2 &uv)
     {
         float u = uv.x, v = uv.y;
         float x = u * (width - 1), y = v * (height - 1);
@@ -59,5 +59,29 @@ public:
         glm::vec3 p1 = glm::mix(getValue(lx, ly), getValue(ux, ly), fx);
         glm::vec3 p2 = glm::mix(getValue(lx, uy), getValue(ux, uy), fx);
         return glm::mix(p1, p2, fy);
+    }
+};
+
+class devTexSampler
+{
+public:
+    devTexObj* tex;
+    glm::vec3 fixVal;
+
+    devTexSampler() :tex(nullptr), fixVal(0) {};
+
+    devTexSampler(devTexObj *_tex) :tex(_tex) {}
+
+    devTexSampler(const glm::vec3& val) :fixVal(val), tex(nullptr) {}
+
+    devTexSampler(float val) :fixVal(glm::vec3(val)), tex(nullptr) {}
+
+    __host__ __device__ glm::vec3 linearSample(const glm::vec2 &uv)
+    {
+        if (!this->tex)
+        {
+            return fixVal;
+        }
+        return tex->linearSample(uv);
     }
 };

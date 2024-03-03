@@ -1,8 +1,8 @@
 // dielectric
-MATERIAL 0
+MATERIAL whiteglass
 TYPE	    Dielectric
 ALBEDO      .98 .98 .98
-METALLIC    0
+METALLIC    ..\scenes\env\Newport_Loft_Ref.hdr
 ROUGHNESS   1
 IOR         1.4
 
@@ -17,12 +17,13 @@ EYE         0.0 5 10.5
 LOOKAT      0 5 0
 UP          0 1 0
 
-OBJECT 0
+OBJECT bunny
 ..\scenes\model\bunny_large.obj
-material 0
+material whiteglass
 TRANS       0 0.7 0
-ROTAT       0 180 0
+ROTAT       0 0 0
 SCALE       5 5 5
 
 //envMap
-ENV ..\scenes\env\Newport_Loft_Ref.hdr
+//ENV ..\scenes\env\Newport_Loft_Ref.hdr
+ENV ..\scenes\env\moonless_golf_4k.hdr
