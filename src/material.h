@@ -109,6 +109,10 @@ public:
     {
         float a2 = sampleRoughness * sampleRoughness;
         float cosO = glm::dot(n, wo), cosI = glm::dot(n, wi);
+        if (cosO * cosI < 1e-7)
+        {
+            return glm::vec3(0.f);
+        }
         glm::vec3 wm = glm::normalize(wo + wi);
         float D = math::normalDistribGGX(glm::dot(wm, n), a2);
         float G2 = math::SmithG2(sampleRoughness, cosO, cosI);
@@ -129,35 +133,86 @@ public:
 
     __host__ __device__ void microfacetScatterSample(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler, const glm::vec2& uv)
     {
-        glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, roughness, sample2D(sampler));
+        float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);
+        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+        volatile float c1 = sampleAlbedo.x, c2 = sampleAlbedo.y, c3 = sampleAlbedo.z;
+        volatile float wm1 = 1, wm2 = 1, wm3 = 1;
+
+        glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, sampleRoughness, sample2D(sampler));
         srec.dir = glm::reflect(wo, wm);
+        wm1 = wm.x, wm2 = wm.y, wm3 = wm.z;
         if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
         {
             srec.bsdf = glm::vec3(0);
             srec.pdf = 0;
             return;
         }
-        float sampleRoughness = roughnessSampler.linearSample(uv).x;
-        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+
         srec.bsdf = microfacetBSDF(n, -1.f * wo, srec.dir, sampleAlbedo, sampleRoughness);
         srec.pdf = microfacetPDF(n, -1.f * wo, srec.dir, sampleRoughness);
+        volatile float b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z;
+        volatile float p = srec.pdf;
+        return;
+    }
+
+    __host__ __device__ glm::vec3 metallicBSDF(const glm::vec3& n, const glm::vec3& wo, const glm::vec3& wi, const glm::vec3& sampleAlbedo, float sampleRoughness, float sampleMetallic)
+    {
+        float a2 = sampleRoughness * sampleRoughness;
+        float cosO = glm::dot(n, wo), cosI = glm::dot(n, wi);
+        if (cosO * cosI < 1e-7)
+        {
+            return glm::vec3(0.f);
+        }
+        glm::vec3 wm = glm::normalize(wo + wi);
+        float D = math::normalDistribGGX(glm::dot(wm, n), a2);
+        float G2 = math::SmithG2(sampleRoughness, cosO, cosI);
+        glm::vec3 F = math::FresnelSchilick(glm::mix(glm::vec3(0.08f), sampleAlbedo, sampleMetallic), glm::dot(wo, wm));
+
+        return glm::mix((1.f - sampleMetallic) * sampleAlbedo * InvPI, glm::vec3(D * G2 / glm::max(4 * cosO * cosI, 1e-8f)), F);
+    }
+
+    __host__ __device__ float metallicPDF(const glm::vec3& n, const glm::vec3& wo, const glm::vec3& wi, float sampleRoughness, float sampleMetallic)
+    {
+        float a2 = sampleRoughness * sampleRoughness;
+        float cosO = glm::dot(n, wo), cosI = glm::dot(n, wi);
+        glm::vec3 wm = glm::normalize(wo + wi);
+        float D = math::normalDistribGGX(glm::dot(wm, n), a2);
+        float G1 = math::SmithG1(sampleRoughness, cosO);
+        return glm::mix(glm::dot(wi, n) * InvPI, G1 * D / glm::max(4 * glm::dot(wo, n), 1e-8f), 1.f / (2.f - sampleMetallic));
     }
 
     __host__ __device__ void metallicScatterSample(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler, const glm::vec2& uv)
     {
-        glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, roughness, sample2D(sampler));
-        srec.dir = glm::reflect(wo, wm);
+        float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);
+        float sampleMetallic = glm::clamp(metallicSampler.linearSample(uv).x, 0.f, 1.f);
+        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+        float r = sample1D(sampler);
+        volatile float c1 = sampleAlbedo.x, c2 = sampleAlbedo.y, c3 = sampleAlbedo.z;
+        volatile float wm1 = 1, wm2 = 1, wm3 = 1;
+
+        if (r < 1.f / (2.f - metallic))
+        {
+            glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, sampleRoughness, sample2D(sampler));
+            srec.dir = glm::reflect(wo, wm);
+            wm1 = wm.z, wm1 = wm.x, wm2 = wm.y, wm3 = wm.z;
+        }
+        else
+        {
+            srec.dir = math::sampleHemisphereCosine(n, sample2D(sampler));
+        }
+
         if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
         {
             srec.bsdf = glm::vec3(0);
             srec.pdf = 0;
             return;
         }
-        float sampleRoughness = roughnessSampler.linearSample(uv).x;
-        float sampleMetallic = metallicSampler.linearSample(uv).x;
-        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
-        srec.bsdf = microfacetBSDF(n, -1.f * wo, srec.dir, sampleAlbedo, sampleRoughness);
-        srec.pdf = microfacetPDF(n, -1.f * wo, srec.dir, sampleRoughness);
+
+        srec.bsdf = metallicBSDF(n, -1.f * wo, srec.dir, sampleAlbedo, sampleRoughness, sampleMetallic);
+        srec.pdf = metallicPDF(n, -1.f * wo, srec.dir, sampleRoughness, sampleMetallic);
+        volatile float b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z;
+        volatile float p = srec.pdf;
+        return;
     }
 
     __host__ __device__ bool scatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler, const glm::vec2 &uv = glm::vec2(0.f))
@@ -170,6 +225,7 @@ public:
             break;
         case Material::MetallicWorkflow:
             metallicScatterSample(n, wo, srec, sampler, uv);
+            return true;
             break;
         case Material::Dielectric:
             dielectricScatterSample(n, wo, srec, sampler, uv);

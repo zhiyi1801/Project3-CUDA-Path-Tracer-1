@@ -22,11 +22,13 @@
 #define USE_BVH 1
 #define USE_SAH 1
 #define USE_MTBVH 1
-#define TONEMAPPING 1
-#define VERTEX_NORMAL 0
+#define TONEMAPPING 0
+#define VERTEX_NORMAL 1
 #define SHOW_NORMAL 0
 #define MIS_SAMPLE 0
 #define LIGHT_SAMPLE 0
+#define ROUGHNESS_MIN 1e-3
+#define ROUGHNESS_MAX 1.f
 
 using Sampler = thrust::default_random_engine;
 using color = glm::vec3;

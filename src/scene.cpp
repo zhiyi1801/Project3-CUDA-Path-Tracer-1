@@ -278,7 +278,7 @@ int Scene::loadMaterial(string materialName) {
                 newMaterial.roughnessMapID = this->loadTexture(tokens[1]);
                 if (newMaterial.roughnessMapID < 0)
                 {
-                    newMaterial.roughness = glm::max(atof(tokens[1].c_str()), 0.001);
+                    newMaterial.roughness = glm::max(atof(tokens[1].c_str()), ROUGHNESS_MIN);
                     newMaterial.roughnessSampler = devTexSampler(newMaterial.roughness);
                 }
             }
