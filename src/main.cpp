@@ -11,7 +11,7 @@ static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
 
-static bool camchanged = true;
+bool camchanged = true;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
 
@@ -78,8 +78,9 @@ int main(int argc, char** argv) {
 	// so, (0 0 1) is forward, (0 1 0) is up
 	glm::vec3 viewXZ = glm::vec3(view.x, 0.0f, view.z);
 	glm::vec3 viewZY = glm::vec3(0.0f, view.y, view.z);
-	phi = glm::acos(glm::dot(glm::normalize(viewXZ), glm::vec3(0, 0, -1)));
-	theta = glm::acos(glm::dot(glm::normalize(viewZY), glm::vec3(0, 1, 0)));
+	phi = glm::atan(view.z, view.x);
+	if (phi < 0) phi += TWO_PI;
+	theta = glm::acos(view.y);
 	ogLookAt = cam.lookAt;
 	zoom = glm::length(cam.position - ogLookAt);
 
@@ -127,20 +128,21 @@ void runCuda() {
 	if (camchanged) {
 		iteration = 0;
 		Camera& cam = renderState->camera;
-		cameraPosition.x = zoom * sin(phi) * sin(theta);
+/*		cameraPosition.x = zoom * sin(phi) * sin(theta);
 		cameraPosition.y = zoom * cos(theta);
-		cameraPosition.z = zoom * cos(phi) * sin(theta);
+		cameraPosition.z = zoom * cos(phi) * sin(theta)*/;
 
-		cam.view = -glm::normalize(cameraPosition);
+		//cam.view = -glm::normalize(cameraPosition);
+		cam.view = glm::vec3(glm::sin(theta) * glm::cos(phi), glm::cos(theta), glm::sin(theta) * glm::sin(phi));
 		glm::vec3 v = cam.view;
 		glm::vec3 u = glm::vec3(0, 1, 0);//glm::normalize(cam.up);
 		glm::vec3 r = glm::cross(v, u);
 		cam.up = glm::cross(r, v);
 		cam.right = r;
 
-		cam.position = cameraPosition;
-		cameraPosition += cam.lookAt;
-		cam.position = cameraPosition;
+		//cam.position = cameraPosition;
+		//cameraPosition += cam.lookAt;
+		//cam.position = cameraPosition;
 		camchanged = false;
 	}
 
@@ -206,8 +208,9 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	if (xpos == lastX || ypos == lastY) return; // otherwise, clicking back into window causes re-start
 	if (leftMousePressed) {
 		// compute new camera parameters
-		phi -= (xpos - lastX) / width;
-		theta -= (ypos - lastY) / height;
+		phi += (xpos - lastX) / width;
+		phi = std::fmod(phi, TWO_PI);
+		theta += (ypos - lastY) / height;
 		theta = std::fmax(0.001f, std::fmin(theta, PI));
 		camchanged = true;
 	}
@@ -226,8 +229,8 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
 		right.y = 0.0f;
 		right = glm::normalize(right);
 
-		cam.lookAt -= (float)(xpos - lastX) * right * 0.01f;
-		cam.lookAt += (float)(ypos - lastY) * forward * 0.01f;
+		cam.position -= (float)(xpos - lastX) * right * 0.01f;
+		cam.position += (float)(ypos - lastY) * forward * 0.01f;
 		camchanged = true;
 	}
 	lastX = xpos;

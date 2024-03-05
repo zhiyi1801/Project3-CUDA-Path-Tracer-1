@@ -189,8 +189,11 @@ public:
         float r = sample1D(sampler);
         volatile float c1 = sampleAlbedo.x, c2 = sampleAlbedo.y, c3 = sampleAlbedo.z;
         volatile float wm1 = 1, wm2 = 1, wm3 = 1;
+        volatile float uv1 = uv.x, uv2 = uv.y;
+        volatile float t = glm::dot(-1.f * wo, n);
+        volatile float n1 = n.x, n2 = n.y, n3 = n.z;
 
-        if (r < 1.f / (2.f - metallic))
+        if (r < 1.f / (2.f - sampleMetallic))
         {
             glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, sampleRoughness, sample2D(sampler));
             srec.dir = glm::reflect(wo, wm);
@@ -201,7 +204,7 @@ public:
             srec.dir = math::sampleHemisphereCosine(n, sample2D(sampler));
         }
 
-        if (glm::dot(srec.dir, n) * glm::dot(-1.f * wo, n) < 0)
+        if (glm::dot(-1.f * wo, n) < 0 || glm::dot(srec.dir, n) < 0)
         {
             srec.bsdf = glm::vec3(0);
             srec.pdf = 0;
@@ -215,8 +218,10 @@ public:
         return;
     }
 
-    __host__ __device__ bool scatterSample(const glm::vec3 &n, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler, const glm::vec2 &uv = glm::vec2(0.f))
+    __host__ __device__ bool scatterSample(const ShadeableIntersection &intersection, const glm::vec3 &wo, scatter_record &srec, Sampler &sampler)
     {
+        glm::vec2 uv = intersection.texCoords;
+        glm::vec3 n = intersection.surfaceNormal;
         switch (type)
         {
         case Material::Lambertian:

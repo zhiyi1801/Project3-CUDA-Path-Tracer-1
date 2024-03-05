@@ -22,7 +22,7 @@
 #define USE_BVH 1
 #define USE_SAH 1
 #define USE_MTBVH 1
-#define TONEMAPPING 0
+#define TONEMAPPING 1
 #define VERTEX_NORMAL 1
 #define SHOW_NORMAL 0
 #define MIS_SAMPLE 0
@@ -199,7 +199,7 @@ namespace math
     __host__ __device__ inline glm::vec2 sphere2Plane(const glm::vec3 &dir) {
         return glm::vec2(
             glm::fract(glm::atan(dir.z, dir.x) * InvPI * .5f + 1.f),
-            glm::max( glm::atan(dir.y, glm::length(glm::vec2(dir.x, dir.z))) * InvPI + 0.5f, 0.f)
+            glm::max(glm::atan(dir.y, glm::length(glm::vec2(dir.x, dir.z))) * InvPI + 0.5f, 0.f)
         );
     }
 

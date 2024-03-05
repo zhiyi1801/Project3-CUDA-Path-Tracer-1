@@ -6,6 +6,7 @@
 #include "glm/glm.hpp"
 #include "glm/gtx/norm.hpp"
 #include "sceneStructs.h"
+#include "image.h"
 
 class Bounds3
 {
@@ -15,8 +16,8 @@ public:
 	__host__ __device__
 	Bounds3()
 	{
-		double minNum = std::numeric_limits<double>::lowest();
-		double maxNum = std::numeric_limits<double>::max();
+		constexpr double minNum = std::numeric_limits<double>::lowest();
+		constexpr double maxNum = std::numeric_limits<double>::max();
 		pMin = glm::vec3(maxNum, maxNum, maxNum);
 		pMax = glm::vec3(minNum, minNum, minNum);
 	}
@@ -329,3 +330,34 @@ public:
 		return (v[0] + v[1] + v[2]) / 3.f;
 	}
 };
+
+inline void updateNorByTex(std::vector<Triangle> &tris, const image* normalMap)
+{
+	for (Triangle& tri : tris)
+	{
+		glm::vec3 T_tmp;
+		glm::vec3 T, B, N;
+		
+		glm::vec3 edge1 = tri.v[1] - tri.v[0];
+		glm::vec3 edge2 = tri.v[2] - tri.v[0];
+		glm::vec2 deltaUV1 = tri.tex[1] - tri.tex[0];
+		glm::vec2 deltaUV2 = tri.tex[2] - tri.tex[0];
+		float f = (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+		if (glm::abs(f) < 1e-8)
+		{
+			continue;
+		}
+		T_tmp = glm::normalize((deltaUV2.y * edge1 - deltaUV1.y * edge2) / f);
+		for (int i = 0; i < 3; ++i)
+		{
+			N = tri.n[i];
+			B = glm::normalize(glm::cross(N, T_tmp));
+			T = glm::normalize(glm::cross(B, N));
+			glm::mat3 TBN{ T, B, N };
+			glm::vec3 n = glm::normalize(normalMap->linearSample(tri.tex[i]) * 2.f - 1.f);
+			tri.n[i] = TBN * n;
+			tri.n[i] = glm::normalize(n);
+		}
+	}
+	return;
+}

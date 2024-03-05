@@ -48,7 +48,7 @@ private:
     int loadMaterial(string materialid);
     int loadGeom(string objectid);
     int loadCamera();
-    int loadTexture(const string& fileName);
+    int loadTexture(const string& fileName, float gamma = 1.f);
 public:
     Scene(const string& filename);
     void setDevData();
@@ -82,7 +82,7 @@ namespace Resource
 {
     MeshData* loadObj(const string& filename, const int _geomIdx);
     void clear();
-    image* loadTexture(const std::string& filename);
+    image* loadTexture(const std::string& filename, float gamma = 1.f);
 
     extern int meshCount;
     extern std::map<std::string, MeshData*> meshPool;

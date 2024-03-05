@@ -243,10 +243,11 @@ int Scene::loadMaterial(string materialName) {
         Material newMaterial;
 
         //load static properties
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             string line;
             utilityCore::safeGetline(fp_in, line);
             vector<string> tokens = utilityCore::tokenizeString(line);
+            if (tokens.size() <= 0) break;
             if (strcmp(tokens[0].c_str(), "TYPE") == 0) {
                 auto it = materialTypeMap.find(tokens[1]);
                 if (it != materialTypeMap.end())
@@ -259,7 +260,7 @@ int Scene::loadMaterial(string materialName) {
                 }
             }
             else if (strcmp(tokens[0].c_str(), "ALBEDO") == 0) {
-                newMaterial.albedoMapID = this->loadTexture(tokens[1]);
+                newMaterial.albedoMapID = this->loadTexture(tokens[1], 1.f);
                 if (newMaterial.albedoMapID < 0)
                 {
                    newMaterial.albedo = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
@@ -282,20 +283,29 @@ int Scene::loadMaterial(string materialName) {
                     newMaterial.roughnessSampler = devTexSampler(newMaterial.roughness);
                 }
             }
+            else if (strcmp(tokens[0].c_str(), "NORMAL") == 0) {
+                newMaterial.normalMapID = this->loadTexture(tokens[1]);
+                if (newMaterial.normalMapID < 0)
+                {
+                    // map [-1, 1] to [0, 1]
+                    newMaterial.normalSampler = devTexSampler(glm::vec3(0.5f, 0.5f, 1.f));
+                }
+            }
             else if (strcmp(tokens[0].c_str(), "IOR") == 0) {
                 newMaterial.ior = atof(tokens[1].c_str());
             }
         }
+        newMaterial.normalSampler = devTexSampler(glm::vec3(0.5f, 0.5f, 1.f));
         materials.push_back(newMaterial);
         materialNameMap[materialName] = id;
         return 1;
     }
 }
 
-int Scene::loadTexture(const string &fileName)
+int Scene::loadTexture(const string &fileName, float gamma)
 {
     cout << "Loading texture: " + fileName + "\n";
-    image* tex = Resource::loadTexture(fileName);
+    image* tex = Resource::loadTexture(fileName, gamma);
     if (!tex)
     {
         return -1;
@@ -477,12 +487,12 @@ void Resource::clear()
     texturePool.clear();
 }
 
-image* Resource::loadTexture(const std::string& filename) {
+image* Resource::loadTexture(const std::string& filename, float gamma) {
     auto find = texturePool.find(filename);
     if (find != texturePool.end()) {
         return find->second;
     }
-    auto texture = new image(filename);
+    auto texture = new image(filename, gamma);
     if (!texture->pixels)
     {
         return nullptr;
@@ -505,7 +515,7 @@ void DevScene::initiate(Scene& scene)
 
     tex_num = scene.textures.size();
     std::vector<devTexObj> tempDevTextures;
-    int textureTotalBytes = 0;
+    long long int textureTotalBytes = 0;
     for (auto tex : scene.textures)
     {
         textureTotalBytes += tex->byteSize();
@@ -513,7 +523,7 @@ void DevScene::initiate(Scene& scene)
     cudaMalloc(&dev_texture_data, textureTotalBytes);
     checkCUDAError("Devscene: dev_texture_data malloc");
 
-    int offset = 0;
+    long long int offset = 0;
     for (auto tex : scene.textures)
     {
         cudaMemcpy(dev_texture_data + offset, tex->data(), tex->byteSize(), cudaMemcpyHostToDevice);

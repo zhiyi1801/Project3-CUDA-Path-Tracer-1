@@ -167,12 +167,13 @@ __global__ void computeIntersections(
 	, ShadeableIntersection* intersections
 	, int* rayValid
 	, glm::vec3* img
+	, Material* materials
 )
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 	volatile int textID = pathSegments[path_index].pixelIndex;
 
-	volatile float n1 = 1, n2 = 1, n3 = 1, c1 = 1, c2 = 1, c3 = 1;
+	volatile float n1 = 1, n2 = 1, n3 = 1, c1 = 1, c2 = 1, c3 = 1, e1 = 1, e2 = 1, e3 = 1;
 	if (path_index < num_paths)
 	{
 		PathSegment pathSegment = pathSegments[path_index];
@@ -292,7 +293,9 @@ __global__ void computeIntersections(
 			rayValid[path_index] = 0;
 			if (dev_scene->envMapID >= 0)
 			{
-				img[pathSegments[path_index].pixelIndex] += pathSegments[path_index].color * dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction));
+				e1 = dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)).x, e2 = dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)).y, e3 = dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)).z;
+				c1 = img[pathSegments[path_index].pixelIndex].x, c2 = img[pathSegments[path_index].pixelIndex].y, c3 = img[pathSegments[path_index].pixelIndex].z;
+				img[pathSegments[path_index].pixelIndex] += math::processNAN(pathSegments[path_index].color * dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)));
 				c1 = img[pathSegments[path_index].pixelIndex].x, c2 = img[pathSegments[path_index].pixelIndex].y, c3 = img[pathSegments[path_index].pixelIndex].z;
 			}
 		}
@@ -302,9 +305,16 @@ __global__ void computeIntersections(
 			intersections[path_index].t = t_min;
 			intersections[path_index].interPoint = intersect_point;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
-			intersections[path_index].surfaceNormal = glm::normalize(normal);
 			intersections[path_index].texCoords = glm::clamp(texCoords, 0.f, 1.f);
 			rayValid[path_index] = 1;
+
+			glm::vec3 mapped = materials[geoms[hit_geom_index].materialid].normalSampler.linearSample(texCoords);
+			glm::vec3 localNorm = glm::normalize(glm::vec3(mapped.x, mapped.y, mapped.z) * 1.f - 0.5f);
+			n1 = mapped.x, n2 = mapped.y, n3 = mapped.z;
+			n1 = localNorm.x, n2 = localNorm.y, n3 = localNorm.z;
+			n1 = glm::normalize(normal).x, n2 = glm::normalize(normal).y, n3 = glm::normalize(normal).z;
+			intersections[path_index].surfaceNormal = math::localRefMatrix_Pixar(glm::normalize(normal)) * localNorm;
+			//intersections[path_index].surfaceNormal = glm::normalize(normal);
 		}
 #endif // SHOW_NORMAL
 	}
@@ -351,7 +361,7 @@ __global__ void PTkernel(
 			Sampler rng = makeSeededRandomEngine(iter, idx, depth);
 
 			scatter_record srec;
-			bool ifScatter = materials[intersection.materialId].scatterSample(intersection.surfaceNormal, pathSegments[idx].ray.direction, srec, rng, intersection.texCoords);
+			bool ifScatter = materials[intersection.materialId].scatterSample(intersection, pathSegments[idx].ray.direction, srec, rng);
 			Material::Type mType = materials[intersection.materialId].type;
 			if (srec.pdf == 0)
 			{
@@ -364,7 +374,7 @@ __global__ void PTkernel(
 				pathSegments[idx].color *= (srec.bsdf / srec.pdf);
 				pathSegments[idx].remainingBounces = 0;
 				rayValid[idx] = 0;
-				img[pathSegments[idx].pixelIndex] += pathSegments[idx].color;
+				img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
 			}
 			// Otherwise, do some pseudo-lighting computation. This is actually more
 			// like what you would expect from shading in a rasterizer like OpenGL.
@@ -381,6 +391,7 @@ __global__ void PTkernel(
 				d1 = srec.dir.x, d2 = srec.dir.y, d3 = srec.dir.z;
 				ic1 = offsetDir.x, ic2 = offsetDir.y, ic3 = offsetDir.z;
 				o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
+				c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
 
 				if (--(pathSegments[idx].remainingBounces) == 0)
 				{
@@ -529,6 +540,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			, dev_intersections1
 			, rayValid
 			, dev_image
+			, dev_materials
 			);
 		checkCUDAError("trace one bounce");
 		cudaDeviceSynchronize();

@@ -14,6 +14,8 @@ GLFWwindow* window;
 GuiDataContainer* imguiData = NULL;
 ImGuiIO* io = nullptr;
 bool mouseOverImGuiWinow = false;
+extern bool camchanged;
+extern float theta, phi;
 
 std::string currentTimeString() {
 	time_t now;
@@ -218,8 +220,23 @@ void RenderImGui()
 	//ImGui::Text("counter = %d", counter);
 	ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	ImGui::Text("Num triangles: %d", scene->triangles.size());
+	ImGui::Text("Num bvh nodes: %d", scene->gpuBVHNodes.size());
 	ImGui::End();
 
+	ImGui::Begin("Camera Settings");
+	if (ImGui::SliderFloat("Pos x", &scene->state.camera.position.x, -10.0f, 10.0f))
+		camchanged = true;
+	if (ImGui::SliderFloat("Pos y", &scene->state.camera.position.y, -10.0f, 10.0f))
+		camchanged = true;
+	if (ImGui::SliderFloat("Pos z", &scene->state.camera.position.z, -10.0f, 10.0f))
+		camchanged = true;
+	if (ImGui::SliderFloat("theta", &theta, 0.f, PI))
+		camchanged = true;
+	if (ImGui::SliderFloat("phi", &phi, 0.f, TWO_PI))
+		camchanged = true;
+	ImGui::Text("Camera look at: %3f  %3f  %3f", scene->state.camera.view.x + scene->state.camera.position.x, scene->state.camera.view.y + scene->state.camera.position.y, scene->state.camera.view.z + scene->state.camera.position.z);
+	ImGui::End();
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

@@ -62,8 +62,15 @@ ROUGHNESS   0.5
 IOR         0
 
 MATERIAL tex
-TYPE	    Microfacet
+TYPE	    Lambertian
 ALBEDO	    ..\scenes\texture\test\testtexture.png
+METALLIC    0
+ROUGHNESS   0.
+IOR         0
+
+MATERIAL tex2
+TYPE	    Lambertian
+ALBEDO	    ..\scenes\model\Camera\textures\body_norm.png
 METALLIC    0
 ROUGHNESS   0.
 IOR         0
@@ -130,7 +137,7 @@ SCALE       .01 10 10
 // Sphere
 OBJECT cube1
 ..\scenes\model\cubetex.obj
-material tex
-TRANS       0 0 0
+material tex2
+TRANS       0 1 0
 ROTAT       0 0 0
 SCALE       2 2 2
