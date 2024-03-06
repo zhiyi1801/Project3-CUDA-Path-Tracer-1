@@ -225,17 +225,20 @@ void RenderImGui()
 	ImGui::End();
 
 	ImGui::Begin("Camera Settings");
-	if (ImGui::SliderFloat("Pos x", &scene->state.camera.position.x, -10.0f, 10.0f))
+	if (ImGui::DragFloat("Pos x", &scene->state.camera.position.x, .1f))
 		camchanged = true;
-	if (ImGui::SliderFloat("Pos y", &scene->state.camera.position.y, -10.0f, 10.0f))
+	if (ImGui::DragFloat("Pos y", &scene->state.camera.position.y, .1f))
 		camchanged = true;
-	if (ImGui::SliderFloat("Pos z", &scene->state.camera.position.z, -10.0f, 10.0f))
+	if (ImGui::DragFloat("Pos z", &scene->state.camera.position.z, .1f))
 		camchanged = true;
-	if (ImGui::SliderFloat("theta", &theta, 0.f, PI))
+	if (ImGui::DragFloat("theta", &theta, .1f))
 		camchanged = true;
-	if (ImGui::SliderFloat("phi", &phi, 0.f, TWO_PI))
+	if (ImGui::DragFloat("phi", &phi, .1f))
 		camchanged = true;
-	ImGui::Text("Camera look at: %3f  %3f  %3f", scene->state.camera.view.x + scene->state.camera.position.x, scene->state.camera.view.y + scene->state.camera.position.y, scene->state.camera.view.z + scene->state.camera.position.z);
+
+	glm::vec3 lookat = glm::normalize(scene->state.camera.view) + scene->state.camera.position;
+
+	ImGui::Text("Camera look at: %3f  %3f  %3f", lookat.x, lookat.y, lookat.z);
 	ImGui::End();
 
 	ImGui::Render();

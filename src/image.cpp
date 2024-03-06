@@ -22,7 +22,6 @@ image::image(int x, int y) :
 image::image(std::string filePath, float gamma)
 {
     int channels;
-    stbi_set_flip_vertically_on_load(true);
     stbi_ldr_to_hdr_gamma(gamma);
     float *data = stbi_loadf(filePath.c_str(), &width, &height, &channels, 3);
 
@@ -56,10 +55,6 @@ void image::savePNG(const std::string &baseFilename) {
         for (int x = 0; x < width; x++) {
             int i = y * width + x;
             glm::vec3 pix = glm::clamp(pixels[i], glm::vec3(), glm::vec3(1)) * 255.f;
-#if TONEMAPPING
-            pix = gammaCorrection(ACESFilm(pix/255.0f));
-            pix *= 255.0f;
-#endif // TONEMAPPING
             bytes[3 * i + 0] = (unsigned char)pix.x;
             bytes[3 * i + 1] = (unsigned char)pix.y;
             bytes[3 * i + 2] = (unsigned char)pix.z;

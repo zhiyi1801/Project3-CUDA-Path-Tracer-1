@@ -16,6 +16,7 @@ static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
 
 float zoom, theta, phi;
+bool posInit = true;
 glm::vec3 cameraPosition;
 glm::vec3 ogLookAt; // for recentering the camera
 
@@ -68,21 +69,31 @@ int main(int argc, char** argv) {
 	height = cam.resolution.y;
 
 	glm::vec3 view = cam.view;
-	glm::vec3 up = cam.up;
-	glm::vec3 right = glm::cross(view, up);
-	up = glm::cross(right, view);
 
 	cameraPosition = cam.position;
 
 	// compute phi (horizontal) and theta (vertical) relative 3D axis
 	// so, (0 0 1) is forward, (0 1 0) is up
-	glm::vec3 viewXZ = glm::vec3(view.x, 0.0f, view.z);
-	glm::vec3 viewZY = glm::vec3(0.0f, view.y, view.z);
-	phi = glm::atan(view.z, view.x);
-	if (phi < 0) phi += TWO_PI;
-	theta = glm::acos(view.y);
+	if (posInit)
+	{
+		glm::vec3 viewXZ = glm::vec3(view.x, 0.0f, view.z);
+		glm::vec3 viewZY = glm::vec3(0.0f, view.y, view.z);
+		phi = glm::degrees(glm::atan(view.z, view.x));
+		theta = glm::degrees(glm::sin(view.y));
+		theta = glm::clamp(theta, -89.f, 89.f);
+	}
+	else
+	{
+		float radianTheta = glm::radians(theta), radianPhi = glm::radians(phi);
+		cam.view = glm::vec3(glm::cos(radianTheta) * glm::cos(radianPhi), glm::sin(radianTheta), glm::cos(radianTheta) * glm::sin(radianPhi));
+		cam.lookAt = cam.position + cam.view;
+	}
+
+	cam.right = glm::cross(cam.view, cam.up);
+	cam.up = glm::cross(cam.right, cam.view);
 	ogLookAt = cam.lookAt;
 	zoom = glm::length(cam.position - ogLookAt);
+	camchanged = true;
 
 	// Initialize CUDA and GL components
 	init();
@@ -109,8 +120,11 @@ void saveImage() {
 	for (int x = 0; x < width; x++) {
 		for (int y = 0; y < height; y++) {
 			int index = x + (y * width);
-			glm::vec3 pix = renderState->image[index];
-			img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+			glm::vec3 pix = renderState->image[index] / samples;
+#if TONEMAPPING
+			pix = gammaCorrection(ACESFilm(pix));
+#endif // TONEMAPPING
+			img.setPixel(width - 1 - x, y, glm::vec3(pix));
 		}
 	}
 
@@ -133,12 +147,13 @@ void runCuda() {
 		cameraPosition.z = zoom * cos(phi) * sin(theta)*/;
 
 		//cam.view = -glm::normalize(cameraPosition);
-		cam.view = glm::vec3(glm::sin(theta) * glm::cos(phi), glm::cos(theta), glm::sin(theta) * glm::sin(phi));
+		float radianTheta = glm::radians(theta), radianPhi = glm::radians(phi);
+		cam.view = glm::vec3(glm::cos(radianTheta) * glm::cos(radianPhi), glm::sin(radianTheta), glm::cos(radianTheta) * glm::sin(radianPhi));
 		glm::vec3 v = cam.view;
 		glm::vec3 u = glm::vec3(0, 1, 0);//glm::normalize(cam.up);
 		glm::vec3 r = glm::cross(v, u);
-		cam.up = glm::cross(r, v);
-		cam.right = r;
+		cam.up = glm::normalize(glm::cross(r, v));
+		cam.right = glm::normalize(r);
 
 		//cam.position = cameraPosition;
 		//cameraPosition += cam.lookAt;
@@ -153,7 +168,13 @@ void runCuda() {
 		pathtraceFree();
 		pathtraceInit(scene);
 	}
-
+	//if (iteration == 1)
+	//{
+	//	saveImage();
+	//	pathtraceFree();
+	//	cudaDeviceReset();
+	//	exit(EXIT_SUCCESS);
+	//}
 	if (iteration < renderState->iterations) {
 		uchar4* pbo_dptr = NULL;
 		iteration++;
@@ -208,10 +229,9 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	if (xpos == lastX || ypos == lastY) return; // otherwise, clicking back into window causes re-start
 	if (leftMousePressed) {
 		// compute new camera parameters
-		phi += (xpos - lastX) / width;
-		phi = std::fmod(phi, TWO_PI);
-		theta += (ypos - lastY) / height;
-		theta = std::fmax(0.001f, std::fmin(theta, PI));
+		phi -= (xpos - lastX) / width * 40.f;
+		theta += (ypos - lastY) / height * 40.f;
+		theta = glm::clamp(theta, -89.f, 89.f);
 		camchanged = true;
 	}
 	else if (rightMousePressed) {

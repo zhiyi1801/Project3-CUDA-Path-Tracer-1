@@ -160,6 +160,13 @@ namespace math
         return (1 - x) * a + x * b;
     }
 
+    __host__ __device__ static glm::mat3 localRefMatrix2(glm::vec3 n) {
+        glm::vec3 t = (glm::abs(n.y) > 0.9999f) ? glm::vec3(0.f, 0.f, 1.f) : glm::vec3(0.f, 1.f, 0.f);
+        glm::vec3 b = glm::normalize(glm::cross(n, t));
+        t = glm::cross(b, n);
+        return glm::mat3(t, b, n);
+    }
+
     __host__ __device__ static void localRefMatrix(const glm::vec3& n, glm::vec3& xp, glm::vec3& yp) {
         glm::vec3 t = (glm::abs(n.x) > 0.9f) ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
         glm::vec3 b = glm::normalize(glm::cross(n, t));
@@ -216,6 +223,20 @@ namespace math
         return uvw.local(xyz);
     }
 
+    __host__ __device__ static glm::vec2 toConcentricDisk(float x, float y) {
+        float r = glm::sqrt(x);
+        float theta = y * PI * 2.0f;
+        return glm::vec2(glm::cos(theta), glm::sin(theta)) * r;
+    }
+
+    __host__ __device__
+        inline glm::vec3 sampleHemisphereCosine2(const glm::vec3& n, glm::vec2 r)
+    {
+        glm::vec2 d = toConcentricDisk(r.x, r.y);
+        float z = glm::sqrt(1.f - glm::dot(d, d));
+        return localRefMatrix2(n) * glm::vec3(d, z);
+    }
+
     __host__ __device__
         inline glm::vec3 sampleHemisphereUniform(const glm::vec3& n, Sampler& sampler)
     {
@@ -242,7 +263,7 @@ namespace math
 
     __host__ __device__  inline float processNAN(float x)
     {
-        return x != x ? 0 : x;
+        return (x != x || isinf(x)) ? 0 : x;
     }
 
     __host__ __device__  inline glm::vec3 processNAN(const glm::vec3 &v)
@@ -318,6 +339,7 @@ namespace math
     */
     __host__ __device__  inline glm::vec3 sampleNormalGGX(const glm::vec3 &n, const glm::vec3 &wo, float alpha, const glm::vec2 &r)
     {
+        volatile float r1 = r.x, r2 = r.y;
         glm::mat3 local2world = math::localRefMatrix_Pixar(n);
         glm::mat3 world2local = glm::transpose(local2world);
 
@@ -341,6 +363,26 @@ namespace math
 
         return glm::normalize(local2world * glm::vec3(alpha * nh.x, alpha * nh.y,
                                         glm::max(1e-6f, nh.z)));
+    }
+
+    __host__ __device__ static glm::vec3 sampleNormalGGX2(glm::vec3 n, glm::vec3 wo, float alpha, glm::vec2 r) {
+        volatile float r1 = r.x, r2 = r.y;
+        glm::mat3 transMat = math::localRefMatrix2(n);
+        glm::mat3 transInv = glm::inverse(transMat);
+
+        glm::vec3 vh = glm::normalize((transInv * wo) * glm::vec3(alpha, alpha, 1.f));
+
+        float lenSq = vh.x * vh.x + vh.y * vh.y;
+        glm::vec3 t = lenSq > 0.f ? glm::vec3(-vh.y, vh.x, 0.f) / sqrt(lenSq) : glm::vec3(1.f, 0.f, 0.f);
+        glm::vec3 b = glm::cross(vh, t);
+
+        glm::vec2 p = math::sampleUniformDisc(r);
+        float s = 0.5f * (vh.z + 1.f);
+        p.y = (1.f - s) * glm::sqrt(1.f - p.x * p.x) + s * p.y;
+
+        glm::vec3 h = t * p.x + b * p.y + vh * glm::sqrt(glm::max(0.f, 1.f - glm::dot(p, p)));
+        h = glm::vec3(h.x * alpha, h.y * alpha, glm::max(0.f, h.z));
+        return glm::normalize(transMat * h);
     }
 
     // Disney Appoximation of Smith term for GGX

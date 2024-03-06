@@ -32,16 +32,18 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 
 	volatile float p1 = 1, p2 = 1, p3 = 1;
 	volatile float c1 = 1, c2 = 1, c3 = 1;
+	int index = x + (y * resolution.x);
 	if (x < resolution.x && y < resolution.y) {
-		int index = x + (y * resolution.x);
 		glm::vec3 pix = image[index];
 
 		glm::vec3 color;
 		p1 = pix.x, p2 = pix.y, p3 = pix.z;
 #if TONEMAPPING
 		color = pix / (float)iter;
+		c1 = color.x, c2 = color.y, c3 = color.z;
 		color = gammaCorrection(ACESFilm(color));
-		color = color * 255.0f;
+		c1 = color.x, c2 = color.y, c3 = color.z;
+		color = glm::clamp(color * 255.0f, glm::vec3(0.f), glm::vec3(255.0f));
 		c1 = color.x, c2 = color.y, c3 = color.z;
 #else
 		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
@@ -132,22 +134,27 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	int index = x + (y * cam.resolution.x);
+
+	volatile float r1 = 1, r2 = 1, d1 = 1, d2 = 1, d3 = 1, v1 = 1, v2 = 1, v3 = 1, ri1 = 1, ri2 = 1, ri3 = 1;
 
 	if (x < cam.resolution.x && y < cam.resolution.y) {
-		int index = x + (y * cam.resolution.x);
 		PathSegment& segment = pathSegments[index];
 
 		segment.ray.origin = cam.position;
 		segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
-		thrust::default_random_engine rng = makeSeededRandomEngine(x, y, iter);
-		thrust::uniform_real_distribution<float> u01(0, 1);
-
+		Sampler rng = makeSeededRandomEngine(x, y, iter);
+		glm::vec2 r = sample2D(rng);
+		
 		// TODO: implement antialiasing by jittering the ray
 		segment.ray.direction = glm::normalize(cam.view
-			- cam.right * cam.pixelLength.x * static_cast<float>(static_cast<float>(x) + (u01(rng) - 0.5) - cam.resolution.x * 0.5f)
-			- cam.up * cam.pixelLength.y * static_cast<float>(static_cast<float>(y) + (u01(rng) - 0.5) - cam.resolution.y * 0.5f));
+			- cam.right * cam.pixelLength.x * static_cast<float>(static_cast<float>(x) + (r.x - 0.5) - cam.resolution.x * 0.5f)
+			- cam.up * cam.pixelLength.y * static_cast<float>(static_cast<float>(y) + (r.y - 0.5) - cam.resolution.y * 0.5f));
+		r1 = r.x, r2 = r.y, d1 = segment.ray.direction.x, d2 = segment.ray.direction.y, d3 = segment.ray.direction.z;
+		v1 = cam.view.x, v2 = cam.view.y, v3 = cam.view.z, ri1 = cam.right.x, ri2 = cam.right.y, ri3 = cam.right.z;
 
 		segment.pixelIndex = index;
+
 		segment.remainingBounces = traceDepth;
 	}
 }
@@ -313,7 +320,8 @@ __global__ void computeIntersections(
 			n1 = mapped.x, n2 = mapped.y, n3 = mapped.z;
 			n1 = localNorm.x, n2 = localNorm.y, n3 = localNorm.z;
 			n1 = glm::normalize(normal).x, n2 = glm::normalize(normal).y, n3 = glm::normalize(normal).z;
-			intersections[path_index].surfaceNormal = math::localRefMatrix_Pixar(glm::normalize(normal)) * localNorm;
+			intersections[path_index].surfaceNormal = math::localRefMatrix2(glm::normalize(normal)) * localNorm;
+			n1 = intersections[path_index].surfaceNormal.x, n2 = intersections[path_index].surfaceNormal.y, n3 = intersections[path_index].surfaceNormal.z;
 			//intersections[path_index].surfaceNormal = glm::normalize(normal);
 		}
 #endif // SHOW_NORMAL
@@ -354,15 +362,22 @@ __global__ void PTkernel(
 	if (idx < num_paths)
 	{ 
 		ShadeableIntersection intersection = shadeableIntersections[idx];
+		glm::vec3 wo = -pathSegments[idx].ray.direction;
 		if (intersection.t > 0.0f) { // if the intersection exists...
 		  // Set up the RNG
 		  // LOOK: this is how you use thrust's RNG! Please look at
 		  // makeSeededRandomEngine as well.
-			Sampler rng = makeSeededRandomEngine(iter, idx, depth);
+			Sampler rng = makeSeededRandomEngine(iter, textID, depth);
+
+			Material::Type mType = materials[intersection.materialId].type;
+			if (mType != Material::Type::Dielectric && mType != Material::Type::Light && glm::dot(wo, intersection.surfaceNormal) < 0)
+			{
+				intersection.surfaceNormal = -intersection.surfaceNormal;
+			}
 
 			scatter_record srec;
 			bool ifScatter = materials[intersection.materialId].scatterSample(intersection, pathSegments[idx].ray.direction, srec, rng);
-			Material::Type mType = materials[intersection.materialId].type;
+
 			if (srec.pdf == 0)
 			{
 				pathSegments[idx].color *= 0;
@@ -384,6 +399,7 @@ __global__ void PTkernel(
 				pathSegments[idx].ray.direction = srec.dir;
 				pathSegments[idx].ray.origin = intersection.interPoint + 
 												(mType == Material::Type::Dielectric ? 100 : 1) * RAY_BIAS * offsetDir;
+				pathSegments[idx].ray.origin = intersection.interPoint + 1e-5f * srec.dir;
 				pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
 				b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z, tmppdf = srec.pdf;
 				d1 = glm::abs(glm::dot(srec.dir, intersection.surfaceNormal));
@@ -544,7 +560,6 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			);
 		checkCUDAError("trace one bounce");
 		cudaDeviceSynchronize();
-		depth++;
 
 		//QueryPerformanceCounter(&t2);
 		//double time = (double)(t2.QuadPart - t1.QuadPart) / (double)tc.QuadPart;
@@ -578,6 +593,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 
 		num_paths = compact_rays(rayValid, rayIndex, num_paths);
 		iterationComplete = (num_paths == 0); // TODO: should be based off stream compaction results.
+		depth++;
 
 		if (guiData != NULL)
 		{

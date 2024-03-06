@@ -195,7 +195,7 @@ public:
 
         if (r < 1.f / (2.f - sampleMetallic))
         {
-            glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, sampleRoughness, sample2D(sampler));
+            glm::vec3 wm = math::sampleNormalGGX(n, -1.f * wo, sampleRoughness * sampleRoughness, sample2D(sampler));
             srec.dir = glm::reflect(wo, wm);
             wm1 = wm.z, wm1 = wm.x, wm2 = wm.y, wm3 = wm.z;
         }
@@ -213,6 +213,97 @@ public:
 
         srec.bsdf = metallicBSDF(n, -1.f * wo, srec.dir, sampleAlbedo, sampleRoughness, sampleMetallic);
         srec.pdf = metallicPDF(n, -1.f * wo, srec.dir, sampleRoughness, sampleMetallic);
+        volatile float b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z;
+        volatile float p = srec.pdf;
+        return;
+    }
+
+    __host__ __device__ static float schlickG(float cosTheta, float alpha) {
+        float a = alpha * .5f;
+        return cosTheta / (cosTheta * (1.f - a) + a);
+    }
+
+    __host__ __device__ inline float smithG(float cosWo, float cosWi, float alpha) {
+        return schlickG(glm::abs(cosWo), alpha) * schlickG(glm::abs(cosWi), alpha);
+    }
+
+    __host__ __device__ static float GTR2Distrib(float cosTheta, float alpha) {
+        if (cosTheta < 1e-6f) {
+            return 0.f;
+        }
+        float aa = alpha * alpha;
+        float nom = aa;
+        float denom = cosTheta * cosTheta * (aa - 1.f) + 1.f;
+        denom = denom * denom * PI;
+        return nom / denom;
+    }
+
+    __host__ __device__ static float GTR2Pdf(glm::vec3 n, glm::vec3 m, glm::vec3 wo, float alpha) {
+        return GTR2Distrib(glm::dot(n, m), alpha) * schlickG(glm::dot(n, wo), alpha) *
+            glm::dot(m, wo) / glm::dot(n, wo);
+    }
+
+    __host__ __device__ glm::vec3 metallicBSDF2(const glm::vec3& n, const glm::vec3& wo, const glm::vec3& wi, const glm::vec3& sampleAlbedo, float sampleRoughness, float sampleMetallic)
+    {
+        float alpha = sampleRoughness * sampleRoughness;
+        float cosO = glm::dot(n, wo), cosI = glm::dot(n, wi);
+        glm::vec3 h = glm::normalize(wo + wi);
+        if (cosO * cosI < 1e-7)
+        {
+            return glm::vec3(0.f);
+        }
+        volatile float c1 = sampleAlbedo.x, c2 = sampleAlbedo.y, c3 = sampleAlbedo.z;
+        volatile float f1 = glm::mix(glm::vec3(.08f), sampleAlbedo, sampleMetallic).x, f2 = glm::mix(glm::vec3(.08f), sampleAlbedo, sampleMetallic).y, f3 = glm::mix(glm::vec3(.08f), sampleAlbedo, sampleMetallic).z;
+        glm::vec3 f = math::FresnelSchilick(glm::mix(glm::vec3(.08f), sampleAlbedo, sampleMetallic), glm::dot(h, wo));
+        float g = smithG(cosO, cosI, alpha);
+        float d = GTR2Distrib(glm::dot(n, h), alpha);
+
+        return glm::mix(sampleAlbedo * InvPI * (1.f - sampleMetallic), glm::vec3(g * d / (4.f * cosI * cosO)), f);
+    }
+
+    __host__ __device__ float metallicPDF2(const glm::vec3& n, const glm::vec3& wo, const glm::vec3& wi, float sampleRoughness, float sampleMetallic)
+    {
+        glm::vec3 h = glm::normalize(wo + wi);
+        return glm::mix(
+            glm::max(glm::dot(n, wi), 0.f) * InvPI,
+            GTR2Pdf(n, h, wo, sampleRoughness * sampleRoughness) / (4.f * glm::max(glm::dot(h, wo), 0.f)),
+            1.f / (2.f - sampleMetallic)
+        );
+    }
+
+    __host__ __device__ void metallicScatterSample2(const glm::vec3& n, const glm::vec3& wo, scatter_record& srec, Sampler& sampler, const glm::vec2& uv)
+    {
+        float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);
+        float sampleMetallic = glm::clamp(metallicSampler.linearSample(uv).x, 0.f, 1.f);
+        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+        float r = sample1D(sampler);
+        volatile float c1 = sampleAlbedo.x, c2 = sampleAlbedo.y, c3 = sampleAlbedo.z;
+        volatile float wm1 = 1, wm2 = 1, wm3 = 1;
+        volatile float uv1 = uv.x, uv2 = uv.y;
+        volatile float t = glm::dot(-1.f * wo, n);
+        volatile float n1 = n.x, n2 = n.y, n3 = n.z;
+        volatile float wo1 = wo.x, wo2 = wo.y, wo3 = wo.z;
+
+        if (r < 1.f / (2.f - sampleMetallic))
+        {
+            glm::vec3 wm = math::sampleNormalGGX2(n, -1.f * wo, sampleRoughness * sampleRoughness, sample2D(sampler));
+            srec.dir = glm::reflect(wo, wm);
+            wm1 = wm.z, wm1 = wm.x, wm2 = wm.y, wm3 = wm.z;
+        }
+        else
+        {
+            srec.dir = math::sampleHemisphereCosine2(n, sample2D(sampler));
+        }
+
+        if (glm::dot(-1.f * wo, n) < 0 || glm::dot(srec.dir, n) < 0)
+        {
+            srec.bsdf = glm::vec3(0);
+            srec.pdf = 0;
+            return;
+        }
+
+        srec.bsdf = metallicBSDF2(n, -1.f * wo, srec.dir, sampleAlbedo, sampleRoughness, sampleMetallic);
+        srec.pdf = metallicPDF2(n, -1.f * wo, srec.dir, sampleRoughness, sampleMetallic);
         volatile float b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z;
         volatile float p = srec.pdf;
         return;

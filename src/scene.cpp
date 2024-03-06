@@ -3,6 +3,10 @@
 #include <cstring>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include "stb_image.h"
+
+extern float theta, phi;
+extern bool posInit;
 
 const std::map<std::string, Material::Type> materialTypeMap{
     {"Lambertian", Material::Type::Lambertian},
@@ -48,6 +52,7 @@ Scene::Scene(const string& filename) {
         cout << "Error reading from file - aborting!" << endl;
         throw;
     }
+    stbi_set_flip_vertically_on_load(true);
     while (fp_in.good()) {
         string line;
         utilityCore::safeGetline(fp_in, line);
@@ -192,8 +197,15 @@ int Scene::loadCamera() {
         if (strcmp(tokens[0].c_str(), "EYE") == 0) {
             camera.position = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
         }
+        if (strcmp(tokens[0].c_str(), "ROTAT") == 0)
+        {
+            theta = glm::clamp(static_cast<float>(atof(tokens[1].c_str())), -89.f, 89.f);
+            phi = atof(tokens[2].c_str());
+            posInit = false;
+        }
         else if (strcmp(tokens[0].c_str(), "LOOKAT") == 0) {
             camera.lookAt = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
+            posInit = true;
         }
         else if (strcmp(tokens[0].c_str(), "UP") == 0) {
             camera.up = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
@@ -260,7 +272,7 @@ int Scene::loadMaterial(string materialName) {
                 }
             }
             else if (strcmp(tokens[0].c_str(), "ALBEDO") == 0) {
-                newMaterial.albedoMapID = this->loadTexture(tokens[1], 1.f);
+                newMaterial.albedoMapID = this->loadTexture(tokens[1]);
                 if (newMaterial.albedoMapID < 0)
                 {
                    newMaterial.albedo = glm::vec3(atof(tokens[1].c_str()), atof(tokens[2].c_str()), atof(tokens[3].c_str()));
