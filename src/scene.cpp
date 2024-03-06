@@ -350,6 +350,20 @@ void Scene::setDevData()
                 temp_t.v[i] = glm::vec3(g.transform * glm::vec4(t.v[i], 1.0f));
                 temp_t.n[i] = glm::normalize(glm::vec3(g.invTranspose * glm::vec4(t.n[i], 0.0f)));
                 temp_t.tex[i] = t.tex[i];
+
+                temp_t.tangent = glm::vec3(0.f);
+                temp_t.bitangent = glm::vec3(0.f);
+                glm::vec3 edge1 = temp_t.v[1] - temp_t.v[0];
+                glm::vec3 edge2 = temp_t.v[2] - temp_t.v[0];
+                glm::vec2 deltaUV1 = temp_t.tex[1] - temp_t.tex[0];
+                glm::vec2 deltaUV2 = temp_t.tex[2] - temp_t.tex[0];
+                float f = (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+                if (glm::abs(f) < 1e-8)
+                {
+                    continue;
+                }
+                temp_t.tangent = glm::normalize((deltaUV2.y * edge1 - deltaUV1.y * edge2) / f);
+                temp_t.bitangent = glm::normalize((-deltaUV2.x * edge1 + deltaUV1.x * edge2) / f);
             }
             temp_t.geomIdx = gpuGeoms.size() - 1;
             triangles.push_back(temp_t);

@@ -189,6 +189,7 @@ __global__ void computeIntersections(
 		glm::vec3 intersect_point;
 		glm::vec3 normal;
 		glm::vec2 texCoords;
+		glm::vec3 T, B;
 		float t_min = FLT_MAX;
 		int hit_geom_index = -1;
 		bool outside = true;
@@ -266,6 +267,7 @@ __global__ void computeIntersections(
 						intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
 						normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
 						texCoords = (1 - u - v) * tempTri.tex[0] + u * tempTri.tex[1] + v * tempTri.tex[2];
+						T = tempTri.tangent, B = tempTri.bitangent;
 					}
 				}
 			}
@@ -317,12 +319,27 @@ __global__ void computeIntersections(
 
 			glm::vec3 mapped = materials[geoms[hit_geom_index].materialid].normalSampler.linearSample(texCoords);
 			glm::vec3 localNorm = glm::normalize(glm::vec3(mapped.x, mapped.y, mapped.z) * 1.f - 0.5f);
+			normal = glm::normalize(normal);
+
+			//intersections[path_index].surfaceNormal = math::localRefMatrix2(normal) * localNorm;
+			// 
+			//intersections[path_index].surfaceNormal = normal;
+
+			if (glm::dot(T, T) > 1e-3f && glm::abs(localNorm.z - 1.f) > 1e-5)
+			{
+				B = glm::normalize(glm::cross(normal, T));
+				T = glm::normalize(glm::cross(B, normal));
+				intersections[path_index].surfaceNormal = glm::normalize(glm::mat3(T, B, normal) * localNorm);
+			}
+			else
+			{
+				intersections[path_index].surfaceNormal = normal;
+			}
+
 			n1 = mapped.x, n2 = mapped.y, n3 = mapped.z;
 			n1 = localNorm.x, n2 = localNorm.y, n3 = localNorm.z;
 			n1 = glm::normalize(normal).x, n2 = glm::normalize(normal).y, n3 = glm::normalize(normal).z;
-			intersections[path_index].surfaceNormal = math::localRefMatrix2(glm::normalize(normal)) * localNorm;
 			n1 = intersections[path_index].surfaceNormal.x, n2 = intersections[path_index].surfaceNormal.y, n3 = intersections[path_index].surfaceNormal.z;
-			//intersections[path_index].surfaceNormal = glm::normalize(normal);
 		}
 #endif // SHOW_NORMAL
 	}
@@ -370,10 +387,10 @@ __global__ void PTkernel(
 			Sampler rng = makeSeededRandomEngine(iter, textID, depth);
 
 			Material::Type mType = materials[intersection.materialId].type;
-			if (mType != Material::Type::Dielectric && mType != Material::Type::Light && glm::dot(wo, intersection.surfaceNormal) < 0)
-			{
-				intersection.surfaceNormal = -intersection.surfaceNormal;
-			}
+			//if (mType != Material::Type::Dielectric && mType != Material::Type::Light && glm::dot(wo, intersection.surfaceNormal) < 0)
+			//{
+			//	intersection.surfaceNormal = -intersection.surfaceNormal;
+			//}
 
 			scatter_record srec;
 			bool ifScatter = materials[intersection.materialId].scatterSample(intersection, pathSegments[idx].ray.direction, srec, rng);

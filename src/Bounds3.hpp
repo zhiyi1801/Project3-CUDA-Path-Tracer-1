@@ -253,6 +253,7 @@ public:
 	glm::vec3 v[3];
 	glm::vec3 n[3];
 	glm::vec2 tex[3];
+	glm::vec3 tangent, bitangent;
 	//float area;
 	int geomIdx;
 	__host__ __device__
