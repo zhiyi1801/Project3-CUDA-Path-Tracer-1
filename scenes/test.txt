@@ -1,0 +1,55 @@
+// dielectric
+
+MATERIAL 	FloorMat
+ALBEDO	..\scenes\texture\camera\fleshy_granite1_albedo.png
+TYPE		MetallicWorkflow
+METALLIC	0
+ROUGHNESS	0.1
+NORMAL	    NULL
+IOR			0
+
+// dielectric
+MATERIAL Glass
+TYPE	    Dielectric
+ALBEDO      1 1 1
+METALLIC    0
+ROUGHNESS   0
+NORMAL	    NULL
+IOR         1.5
+
+MATERIAL 	Lens
+ALBEDO	..\scenes\model\Camera\textures\lens_base.png
+TYPE		MetallicWorkflow
+METALLIC	..\scenes\model\Camera\textures\lens_metallic.png
+ROUGHNESS	..\scenes\model\Camera\textures\lens_rough.png
+NORMAL          ..\scenes\model\Camera\textures\lens_norm.png
+IOR			0
+
+// Camera
+CAMERA
+RES         1600 1200
+FOVY        5.5
+ITERATIONS  500000
+DEPTH       8
+FILE        camera
+EYE         2.237 3.863 7.587
+ROTAT      -24.407 253
+//LOOKAT      1.971391 3.445022 6.709238
+UP          0 1 0
+
+OBJECT 	Floor
+..\scenes\model\square.obj
+material 	FloorMat
+TRANS	0 0 0
+ROTAT	0 0 0
+SCALE		5 5 5
+
+OBJECT 	lens
+..\scenes\model\Camera\lens.obj
+material 	Lens
+TRANS	0 0 0
+ROTAT	0 0 0
+SCALE		10 10 10
+
+//envMap
+ENV ..\scenes\env\photo_studio_loft_hall_4k.hdr

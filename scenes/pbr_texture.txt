@@ -1,0 +1,11 @@
+Camera
+RES	1600 1200
+FOVY       5.5
+ITERATIONS  5000
+Depth		12
+File        Camera
+EYE         2.237 3.863 7.587
+LOOKAT      0 0 0
+UP          0 1 0
+
+ENV 	..\texture\photo_studio_loft_hall_4k.hdr

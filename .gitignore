@@ -559,7 +559,3 @@ xcuserdata
 *.xccheckout
 *.moved-aside
 *.xcuserstate
-
-scenes/*
-
-gallery/*
