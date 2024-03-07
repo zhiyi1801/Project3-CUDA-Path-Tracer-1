@@ -192,6 +192,7 @@ __global__ void computeIntersections(
 		glm::vec3 T, B;
 		float t_min = FLT_MAX;
 		int hit_geom_index = -1;
+		int triangleId = -1;
 		bool outside = true;
 
 		glm::vec3 tmp_intersect;
@@ -231,7 +232,6 @@ __global__ void computeIntersections(
 		}
 #if USE_BVH
 		int bvhIdx = 0;
-		int triangleId = -1;
 		Triangle tempTri;
 		float tempT = FLT_MAX;
 		int offset = 0;
@@ -254,15 +254,16 @@ __global__ void computeIntersections(
 			//it indicates gpuBVH[bvhIdx] is a leaf node
 			if (curBVH[bvhIdx].end - curBVH[bvhIdx].start <= MAX_PRIM)
 			{
-				for (triangleId = curBVH[bvhIdx].start; triangleId < curBVH[bvhIdx].end; ++triangleId)
+				for (int i = curBVH[bvhIdx].start; i < curBVH[bvhIdx].end; ++i)
 				{
-					tempTri = triangles[triangleId];
+					tempTri = triangles[i];
 					float u, v;
 					bool isHit = tempTri.getInterSect(pathSegment.ray, t, u, v);
 					if (isHit && t_min > t)
 					{
 						t_min = t;
 						hit_geom_index = tempTri.geomIdx;
+						triangleId = i;
 						intersect_point = pathSegment.ray.origin + t * pathSegment.ray.direction;
 						intersect_point = (1 - u - v) * tempTri.v[0] + u * tempTri.v[1] + v * tempTri.v[2];
 						normal = (1 - u - v) * tempTri.n[0] + u * tempTri.n[1] + v * tempTri.n[2];
@@ -315,6 +316,8 @@ __global__ void computeIntersections(
 			intersections[path_index].interPoint = intersect_point;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
 			intersections[path_index].texCoords = glm::clamp(texCoords, 0.f, 1.f);
+			intersections[path_index].geomID = hit_geom_index;
+			intersections[path_index].triangleID = triangleId;
 			rayValid[path_index] = 1;
 
 			glm::vec3 mapped = materials[geoms[hit_geom_index].materialid].normalSampler.linearSample(texCoords);
@@ -366,6 +369,10 @@ __global__ void PTkernel(
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_paths)
+	{
+		return;
+	}
 	volatile int textID = pathSegments[idx].pixelIndex;
 	volatile float c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
 	volatile float o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
@@ -376,70 +383,70 @@ __global__ void PTkernel(
 	volatile float ic1 = img[pathSegments[idx].pixelIndex].x, ic2 = img[pathSegments[idx].pixelIndex].y, ic3 = img[pathSegments[idx].pixelIndex].z;
 	volatile float b1 = 1, b2 = 1, b3 = 1, tmppdf = 1;
 	//volatile float off1 = p1, off2 = p2, off3 = p3, testt = shadeableIntersections[idx].t;
-	if (idx < num_paths)
-	{ 
-		ShadeableIntersection intersection = shadeableIntersections[idx];
-		glm::vec3 wo = -pathSegments[idx].ray.direction;
-		if (intersection.t > 0.0f) { // if the intersection exists...
-		  // Set up the RNG
-		  // LOOK: this is how you use thrust's RNG! Please look at
-		  // makeSeededRandomEngine as well.
-			Sampler rng = makeSeededRandomEngine(iter, textID, depth);
 
-			Material::Type mType = materials[intersection.materialId].type;
-			//if (mType != Material::Type::Dielectric && mType != Material::Type::Light && glm::dot(wo, intersection.surfaceNormal) < 0)
-			//{
-			//	intersection.surfaceNormal = -intersection.surfaceNormal;
-			//}
+	ShadeableIntersection intersection = shadeableIntersections[idx];
+	glm::vec3 wo = -pathSegments[idx].ray.direction;
+	Material::Type mType = materials[intersection.materialId].type;
 
-			scatter_record srec;
-			bool ifScatter = materials[intersection.materialId].scatterSample(intersection, pathSegments[idx].ray.direction, srec, rng);
+	// If there was no intersection, color the ray black.
+	// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
+	// used for opacity, in which case they can indicate "no opacity".
+	// This can be useful for post-processing and image compositing.
+	if (intersection.t <= 0.f)
+	{
+		pathSegments[idx].color *= 0;
+		pathSegments[idx].remainingBounces = 0;
+		rayValid[idx] = 0;
+		return;
+	}
 
-			if (srec.pdf == 0)
-			{
-				pathSegments[idx].color *= 0;
-				pathSegments[idx].remainingBounces = 0;
-				rayValid[idx] = 0;
-			}
-			// If the material indicates that the object was a light, "light" the ray
-			else if (!ifScatter) {
-				pathSegments[idx].color *= (srec.bsdf / srec.pdf);
-				pathSegments[idx].remainingBounces = 0;
-				rayValid[idx] = 0;
-				img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
-			}
-			// Otherwise, do some pseudo-lighting computation. This is actually more
-			// like what you would expect from shading in a rasterizer like OpenGL.
-			// TODO: replace this! you should be able to start with basically a one-liner
-			else {
-				glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;
-				pathSegments[idx].ray.direction = srec.dir;
-				pathSegments[idx].ray.origin = intersection.interPoint + 
-												(mType == Material::Type::Dielectric ? 100 : 1) * RAY_BIAS * offsetDir;
-				pathSegments[idx].ray.origin = intersection.interPoint + 1e-5f * srec.dir;
-				pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
-				b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z, tmppdf = srec.pdf;
-				d1 = glm::abs(glm::dot(srec.dir, intersection.surfaceNormal));
-				rayValid[idx] = 1;
-				d1 = srec.dir.x, d2 = srec.dir.y, d3 = srec.dir.z;
-				ic1 = offsetDir.x, ic2 = offsetDir.y, ic3 = offsetDir.z;
-				o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
-				c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
+	// if the intersection exists...
+	// Set up the RNG
+	// LOOK: this is how you use thrust's RNG! Please look at
+	// makeSeededRandomEngine as well.
 
-				if (--(pathSegments[idx].remainingBounces) == 0)
-				{
-					pathSegments[idx].color = glm::vec3(0.0f);
-					rayValid[idx] = 0;
-				}
-			}
-			// If there was no intersection, color the ray black.
-			// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
-			// used for opacity, in which case they can indicate "no opacity".
-			// This can be useful for post-processing and image compositing.
-		}
-		else {
-			pathSegments[idx].color *= 0;
-			pathSegments[idx].remainingBounces = 0;
+	//if (mType != Material::Type::Dielectric && mType != Material::Type::Light && glm::dot(wo, intersection.surfaceNormal) < 0)
+	//{
+	//	intersection.surfaceNormal = -intersection.surfaceNormal;
+	//}
+
+	Sampler rng = makeSeededRandomEngine(iter, idx, depth);
+	scatter_record srec;
+	bool ifScatter = materials[intersection.materialId].scatterSample(intersection, pathSegments[idx].ray.direction, srec, rng);
+
+	if (srec.pdf == 0)
+	{
+		pathSegments[idx].color *= 0;
+		pathSegments[idx].remainingBounces = 0;
+		rayValid[idx] = 0;
+	}
+	// If the material indicates that the object is a light
+	else if (mType == Material::Type::Light) {
+		pathSegments[idx].color *= (srec.bsdf / srec.pdf);
+		pathSegments[idx].remainingBounces = 0;
+		rayValid[idx] = 0;
+		img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
+	}
+
+	else {
+		glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;
+		pathSegments[idx].ray.direction = srec.dir;
+		//pathSegments[idx].ray.origin = intersection.interPoint + 
+		//								(mType == Material::Type::Dielectric ? 100 : 1) * RAY_BIAS * offsetDir;
+		pathSegments[idx].ray.origin = intersection.interPoint + (mType == Material::Type::Dielectric ? 1e-3f * offsetDir : 1e-4f * srec.dir);
+		pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
+		rayValid[idx] = 1;
+
+		b1 = srec.bsdf.x, b2 = srec.bsdf.y, b3 = srec.bsdf.z, tmppdf = srec.pdf;
+		d1 = glm::abs(glm::dot(srec.dir, intersection.surfaceNormal));
+		d1 = srec.dir.x, d2 = srec.dir.y, d3 = srec.dir.z;
+		ic1 = offsetDir.x, ic2 = offsetDir.y, ic3 = offsetDir.z;
+		o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
+		c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
+
+		if (--(pathSegments[idx].remainingBounces) == 0)
+		{
+			pathSegments[idx].color = glm::vec3(0.0f);
 			rayValid[idx] = 0;
 		}
 	}

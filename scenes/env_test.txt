@@ -21,9 +21,9 @@ OBJECT bunny
 ..\scenes\model\bunny_large.obj
 material whiteglass
 TRANS       0 0.7 0
-ROTAT       0 0 0
+ROTAT       0 180 0
 SCALE       5 5 5
 
 //envMap
-//ENV ..\scenes\env\Newport_Loft_Ref.hdr
-ENV ..\scenes\env\moonless_golf_4k.hdr
+ENV ..\scenes\env\Newport_Loft_Ref.hdr
+//ENV ..\scenes\env\moonless_golf_4k.hdr

@@ -13,6 +13,7 @@ TODO:
     - [ ] Light sample(light of different shape: sphere, cube, plane, triangles)
     - [ ] Integrate these two sample strategies
     - [ ] MIS based on luminance of light
+    - [ ] Prove the unbiasedness of this method
 - [ ] DOF
 - [ ] Denoising
     - [ ] OpenImage Denoiser built [OpenImage](https://www.openimagedenoise.org/)

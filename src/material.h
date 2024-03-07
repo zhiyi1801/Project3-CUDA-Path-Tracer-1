@@ -61,6 +61,14 @@ public:
         srec.delta = false;
     }
 
+    __host__ __device__ glm::vec3 dielectricBSDF(glm::vec3 n, glm::vec3 wo, glm::vec3 wi) {
+        return glm::vec3(0.f);
+    }
+
+    __host__ __device__ float dielectricPDF(glm::vec3 n, glm::vec3 wo, glm::vec3 wi) {
+        return 0.f;
+    }
+
     /// <summary>
     /// compute dielectric bsdf, pdf and scatter direction
     /// always assume one medium is air(ior = 1)
@@ -340,6 +348,46 @@ public:
         }
 
         return false;
+    }
+
+    __device__ glm::vec3 BSDF(const ShadeableIntersection& intersection, const glm::vec3& wo, const glm::vec3& wi) {
+        glm::vec2 uv = intersection.texCoords;
+        glm::vec3 n = intersection.surfaceNormal;
+        float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);
+        float sampleMetallic = glm::clamp(metallicSampler.linearSample(uv).x, 0.f, 1.f);
+        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+
+        switch (type) {
+        case Material::Type::Lambertian:
+            return lambertianBSDF(n, wo, wi, uv);
+        case Material::Type::Microfacet:
+            return microfacetBSDF(n, -1.f * wo, wi, sampleAlbedo, sampleRoughness);
+        case Material::Type::MetallicWorkflow:
+            return metallicBSDF(n, -1.f * wo, wi, sampleAlbedo, sampleRoughness, sampleMetallic);
+        case Material::Type::Dielectric:
+            return dielectricBSDF(n, wo, wi);
+        }
+        return glm::vec3(0.f);
+    }
+
+    __device__ float pdf(const ShadeableIntersection& intersection, const glm::vec3& wo, const glm::vec3& wi) {
+        glm::vec2 uv = intersection.texCoords;
+        glm::vec3 n = intersection.surfaceNormal;
+        float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);
+        float sampleMetallic = glm::clamp(metallicSampler.linearSample(uv).x, 0.f, 1.f);
+        glm::vec3 sampleAlbedo = albedoSampler.linearSample(uv);
+
+        switch (type) {
+        case Material::Type::Lambertian:
+            return lambertianPDF(n, wo, wi);
+        case Material::Type::Microfacet:
+            return microfacetPDF(n, -1.f * wo, wi, sampleRoughness);
+        case Material::Type::MetallicWorkflow:
+            return metallicPDF(n, -1.f * wo, wi,sampleRoughness, sampleMetallic);
+        case Material::Type::Dielectric:
+            return dielectricPDF(n, wo, wi);
+        }
+        return 0;
     }
 
     // parameters of bsdf
