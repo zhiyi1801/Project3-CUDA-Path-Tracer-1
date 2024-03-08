@@ -17,6 +17,7 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "lightSample.h"
 
 __host__ __device__
 thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth) {
@@ -92,11 +93,9 @@ void pathtraceInit(Scene* scene) {
 	cudaMalloc(&dev_paths1, pixelcount * sizeof(PathSegment));
 	cudaMalloc(&dev_paths2, pixelcount * sizeof(PathSegment));
 
-	cudaMalloc(&dev_geoms, scene->geoms.size() * sizeof(Geom));
-	cudaMemcpy(dev_geoms, scene->geoms.data(), scene->geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
+	dev_geoms = hst_scene->tempDevScene.dev_geoms;
 
-	cudaMalloc(&dev_materials, scene->materials.size() * sizeof(Material));
-	cudaMemcpy(dev_materials, scene->materials.data(), scene->materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
+	dev_materials = hst_scene->tempDevScene.dev_materials;
 
 	cudaMalloc(&dev_intersections1, pixelcount * sizeof(ShadeableIntersection));
 	cudaMemset(dev_intersections1, 0, pixelcount * sizeof(ShadeableIntersection));
@@ -113,8 +112,8 @@ void pathtraceFree() {
 	cudaSafeFree(dev_image);  // no-op if dev_image is null
 	cudaSafeFree(dev_paths1);
 	cudaSafeFree(dev_paths2);
-	cudaSafeFree(dev_geoms);
-	cudaSafeFree(dev_materials);
+	//cudaSafeFree(dev_geoms);
+	//cudaSafeFree(dev_materials);
 	cudaSafeFree(dev_intersections1);
 	cudaSafeFree(dev_intersections2);
 	// TODO: clean up any extra device memory you created
@@ -341,16 +340,7 @@ __global__ void computeIntersections(
 	}
 }
 
-// LOOK: "fake" shader demonstrating what you might do with the info in
-// a ShadeableIntersection, as well as how to use thrust's random number
-// generator. Observe that since the thrust random number generator basically
-// adds "noise" to the iteration, the image should start off noisy and get
-// cleaner as more iterations are computed.
-//
-// Note that this shader does NOT do a BSDF evaluation!
-// Your shaders should handle that - this can allow techniques such as
-// bump mapping.
-__global__ void PTkernel(
+__global__ void DirectLiPTkernel(
 	int iter
 	, int depth
 	, int num_paths
@@ -359,6 +349,60 @@ __global__ void PTkernel(
 	, Material* materials
 	, int *rayValid
 	, glm::vec3 *img
+	, const LightSampler &lightSampler
+)
+{
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_paths)
+	{
+		return;
+	}
+
+	rayValid[idx] = 0;
+	ShadeableIntersection intersection = shadeableIntersections[idx];
+	Material mat = materials[intersection.materialId];
+	if (intersection.t <= 0.f)
+	{
+		pathSegments[idx].color *= 0;
+		pathSegments[idx].remainingBounces = 0;
+		return;
+	}
+
+	glm::vec3 wo = -pathSegments[idx].ray.direction;
+	Material::Type mType = mat.type;
+	if (mType == Material::Type::Light) {
+		pathSegments[idx].color *= (materials[intersection.materialId].albedo);
+		pathSegments[idx].remainingBounces = 0;
+		img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
+		return;
+	}
+
+	glm::vec3 viewPos = intersection.interPoint;
+	glm::vec3 viewNor = intersection.surfaceNormal;
+	Sampler rng = makeSeededRandomEngine(iter, idx, depth);
+	lightSampleRecord LiRec;
+	lightSampler.lightSample(viewPos, viewNor, rng, LiRec);
+
+	if (LiRec.pdf <= 0)
+	{
+		pathSegments[idx].color *= 0;
+		return;
+	}
+	glm::vec3 wi = glm::normalize(LiRec.pos - intersection.interPoint);
+	glm::vec3 bsdf = mat.BSDF(intersection, pathSegments[idx].ray.direction, wi);
+	pathSegments[idx].color *= bsdf * LiRec.emit * glm::max(glm::dot(wi, intersection.surfaceNormal), 0.f) / LiRec.pdf;
+	img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
+}
+
+__global__ void PTkernel(
+	int iter
+	, int depth
+	, int num_paths
+	, ShadeableIntersection* shadeableIntersections
+	, PathSegment* pathSegments
+	, Material* materials
+	, int* rayValid
+	, glm::vec3* img
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -594,7 +638,19 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	  // path segments that have been reshuffled to be contiguous in memory.
 
 		//QueryPerformanceCounter(&t1);
-		PTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
+
+		//PTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
+		//	iter,
+		//	depth,
+		//	num_paths,
+		//	dev_intersections1,
+		//	dev_paths1,
+		//	dev_materials,
+		//	rayValid,
+		//	dev_image
+		//	);
+
+		DirectLiPTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
 			iter,
 			depth,
 			num_paths,
@@ -602,8 +658,10 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			dev_paths1,
 			dev_materials,
 			rayValid,
-			dev_image
+			dev_image,
+			dev_scene->dev_lightSampler
 			);
+
 		//QueryPerformanceCounter(&t2);
 		//time = (double)(t2.QuadPart - t1.QuadPart) / (double)tc.QuadPart;
 		//cout << "time2 = " << time << endl;

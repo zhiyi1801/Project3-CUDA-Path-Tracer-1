@@ -71,8 +71,9 @@ FOVY        16
 ITERATIONS  1000000
 DEPTH       8
 FILE        MIS
-EYE         0 -48 180
-LOOKAT      0 -12 20
+EYE         0 20.2 176.9
+ROTAT	    -8.124 -90 0
+//LOOKAT      0 -12 20
 UP          0 1 0
 
 OBJECT LightSmall
@@ -107,7 +108,7 @@ OBJECT GlossyPlaneMedium
 cube
 material glossyMedium
 TRANS       0 -28.672 17.848
-ROTAT       20 0 0
+ROTAT       22 0 0
 SCALE       80 0.2 8
 
 OBJECT GlossyPlaneSmooth

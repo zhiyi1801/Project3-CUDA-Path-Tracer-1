@@ -335,58 +335,6 @@ int Scene::loadTexture(const string &fileName, float gamma)
     return ret;
 }
 
-void Scene::setDevData()
-{
-    for (const auto& g : geoms)
-    {
-        GPUGeom gpuGeom(g.type, g.materialid, g.transform);
-        gpuGeoms.push_back(gpuGeom);
-        if (g.type != OBJ) continue;
-        for (const auto& t : g.mesh->triangles)
-        {
-            Triangle temp_t;
-            for (int i = 0; i < 3; ++i)
-            {
-                temp_t.v[i] = glm::vec3(g.transform * glm::vec4(t.v[i], 1.0f));
-                temp_t.n[i] = glm::normalize(glm::vec3(g.invTranspose * glm::vec4(t.n[i], 0.0f)));
-                temp_t.tex[i] = t.tex[i];
-
-                temp_t.tangent = glm::vec3(0.f);
-                temp_t.bitangent = glm::vec3(0.f);
-                glm::vec3 edge1 = temp_t.v[1] - temp_t.v[0];
-                glm::vec3 edge2 = temp_t.v[2] - temp_t.v[0];
-                glm::vec2 deltaUV1 = temp_t.tex[1] - temp_t.tex[0];
-                glm::vec2 deltaUV2 = temp_t.tex[2] - temp_t.tex[0];
-                float f = (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
-                if (glm::abs(f) < 1e-8)
-                {
-                    continue;
-                }
-                temp_t.tangent = glm::normalize((deltaUV2.y * edge1 - deltaUV1.y * edge2) / f);
-                temp_t.bitangent = glm::normalize((-deltaUV2.x * edge1 + deltaUV1.x * edge2) / f);
-            }
-            temp_t.geomIdx = gpuGeoms.size() - 1;
-            triangles.push_back(temp_t);
-        }
-    }
-
-
-    this->bvhRoot = this->bvhConstructor.recursiveBuild(this->triangles);
-    this->bvhConstructor.recursiveBuildGpuBVHInfo(bvhRoot, this->gpuBVHNodeInfos);
-#if USE_MTBVH
-    this->bvhConstructor.buildGpuMTBVH(this->gpuBVHNodeInfos, this->gpuBVHNodes);
-#else
-    this->bvhConstructor.buildGpuBVH(this->gpuBVHNodeInfos, this->gpuBVHNodes);
-#endif
-
-    this->tempDevScene.initiate(*this);
-    cudaMalloc(&dev_scene, sizeof(DevScene));
-    cudaMemcpy(dev_scene, &tempDevScene, sizeof(DevScene), cudaMemcpyHostToDevice);
-    checkCUDAError("dev_scene");
-
-    bvhRoot->destroy();
-    gpuBVHNodeInfos.clear();
-}
 
 MeshData* Resource::loadObj(const string& filename, const int _geomIdx)
 {
@@ -527,17 +475,84 @@ image* Resource::loadTexture(const std::string& filename, float gamma) {
     return texture;
 }
 
+void Scene::setDevData()
+{
+    for (const auto& g : geoms)
+    {
+        GPUGeom gpuGeom(g.type, g.materialid, g.transform);
+        gpuGeoms.push_back(gpuGeom);
+        if (g.type != OBJ) continue;
+        for (const auto& t : g.mesh->triangles)
+        {
+            Triangle temp_t;
+            for (int i = 0; i < 3; ++i)
+            {
+                temp_t.v[i] = glm::vec3(g.transform * glm::vec4(t.v[i], 1.0f));
+                temp_t.n[i] = glm::normalize(glm::vec3(g.invTranspose * glm::vec4(t.n[i], 0.0f)));
+                temp_t.tex[i] = t.tex[i];
+
+                temp_t.tangent = glm::vec3(0.f);
+                temp_t.bitangent = glm::vec3(0.f);
+                glm::vec3 edge1 = temp_t.v[1] - temp_t.v[0];
+                glm::vec3 edge2 = temp_t.v[2] - temp_t.v[0];
+                glm::vec2 deltaUV1 = temp_t.tex[1] - temp_t.tex[0];
+                glm::vec2 deltaUV2 = temp_t.tex[2] - temp_t.tex[0];
+                float f = (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+                if (glm::abs(f) < 1e-8)
+                {
+                    continue;
+                }
+                temp_t.tangent = glm::normalize((deltaUV2.y * edge1 - deltaUV1.y * edge2) / f);
+                temp_t.bitangent = glm::normalize((-deltaUV2.x * edge1 + deltaUV1.x * edge2) / f);
+            }
+            temp_t.geomIdx = gpuGeoms.size() - 1;
+            triangles.push_back(temp_t);
+        }
+    }
+
+
+    this->bvhRoot = this->bvhConstructor.recursiveBuild(this->triangles);
+    this->bvhConstructor.recursiveBuildGpuBVHInfo(bvhRoot, this->gpuBVHNodeInfos);
+#if USE_MTBVH
+    this->bvhConstructor.buildGpuMTBVH(this->gpuBVHNodeInfos, this->gpuBVHNodes);
+#else
+    this->bvhConstructor.buildGpuBVH(this->gpuBVHNodeInfos, this->gpuBVHNodes);
+#endif
+    for (int i = 0; i < geoms.size(); ++i)
+    {
+        if (materials[geoms[i].materialid].type == Material::Type::Light && geoms[i].type != GeomType::OBJ)
+        {
+            int geomID = i;
+            int triangleID = -1;
+            GeomType type = geoms[i].type;
+            lights.emplace_back(lightPrim(geomID, triangleID, type));
+        }
+    }
+
+    for (int i = 0; i < triangles.size(); ++i)
+    {
+        int geomID = triangles[i].geomIdx;
+        if (materials[geoms[geomID].materialid].type == Material::Type::Light)
+        {
+            int triangleID = i;
+            GeomType type = GeomType::OBJ;
+            lights.emplace_back(lightPrim(geomID, triangleID, type));
+        }
+    }
+
+    this->tempDevScene.initiate(*this);
+    cudaMalloc(&dev_scene, sizeof(DevScene));
+    cudaMemcpy(dev_scene, &tempDevScene, sizeof(DevScene), cudaMemcpyHostToDevice);
+    checkCUDAError("dev_scene");
+
+    bvhRoot->destroy();
+    gpuBVHNodeInfos.clear();
+}
+
 void DevScene::initiate(Scene& scene)
 {
     tri_num = scene.triangles.size();
     bvh_size = scene.gpuBVHNodeInfos.size();
-    cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
-    cudaMemcpy(dev_triangles, scene.triangles.data(), sizeof(Triangle) * scene.triangles.size(), cudaMemcpyHostToDevice);
-    checkCUDAError("DevScene initiate::triangles");
-
-    cudaMalloc(&dev_gpuBVH, sizeof(GpuBVHNode) * scene.gpuBVHNodes.size());
-    cudaMemcpy(dev_gpuBVH, scene.gpuBVHNodes.data(), sizeof(GpuBVHNode) * scene.gpuBVHNodes.size(), cudaMemcpyHostToDevice);
-    checkCUDAError("DevScene initiate::gpu bvh tree");
 
     tex_num = scene.textures.size();
     std::vector<devTexObj> tempDevTextures;
@@ -592,6 +607,41 @@ void DevScene::initiate(Scene& scene)
     {
         this->envSampler.tex = dev_textures + this->envMapID;
     }
+
+    cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
+    cudaMemcpy(dev_triangles, scene.triangles.data(), sizeof(Triangle) * scene.triangles.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::triangles");
+
+    cudaMalloc(&dev_gpuBVH, sizeof(GpuBVHNode) * scene.gpuBVHNodes.size());
+    cudaMemcpy(dev_gpuBVH, scene.gpuBVHNodes.data(), sizeof(GpuBVHNode) * scene.gpuBVHNodes.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::gpu bvh tree");
+
+    cudaMalloc(&dev_geoms, sizeof(Geom) * scene.geoms.size());
+    cudaMemcpy(dev_geoms, scene.geoms.data(), sizeof(Geom) * scene.geoms.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::gpu geoms");
+
+    cudaMalloc(&dev_materials, scene.materials.size() * sizeof(Material));
+    cudaMemcpy(dev_materials, scene.materials.data(), scene.materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::gpu material");
+
+    cudaMalloc(&dev_lights, sizeof(lightPrim) * scene.lights.size());
+    cudaMemcpy(dev_lights, scene.lights.data(), sizeof(lightPrim) * scene.lights.size(), cudaMemcpyHostToDevice);
+    checkCUDAError("DevScene initiate::gpu lights");
+
+    LightSampler& lightSampler = this->dev_lightSampler;
+    lightSampler.bvhRoot = dev_gpuBVH;
+    lightSampler.bvhSize = this->bvh_size;
+
+    lightSampler.geoms = this->dev_geoms;
+    lightSampler.geomsSize = scene.geoms.size();
+
+    lightSampler.triangles = this->dev_triangles;
+    lightSampler.triangleSize = this->tri_num;
+
+    lightSampler.mats = this->dev_materials;
+
+    lightSampler.lights = this->dev_lights;
+    lightSampler.lightSize = scene.lights.size();
 }
 
 void DevScene::destroy()

@@ -17,6 +17,7 @@
 #include "tiny_obj_loader.hpp"
 #include "material.h"
 #include "image.h"
+#include "lightSample.h"
 
 using namespace std;
 
@@ -40,6 +41,13 @@ public:
 
     int envMapID = -1;
     devTexSampler envSampler{0.f};
+
+    lightPrim* dev_lights;
+    LightSampler dev_lightSampler;
+
+    Geom* dev_geoms;
+
+    Material* dev_materials;
 };
 
 class Scene {
@@ -62,6 +70,7 @@ public:
     std::vector<Triangle> triangles;
     std::vector<image*> textures;
     std::map<image*, int> textureIdMap;
+    std::vector<lightPrim> lights;
 
     int envMapID = -1;
 
