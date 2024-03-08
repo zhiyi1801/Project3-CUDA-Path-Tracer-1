@@ -12,6 +12,7 @@ TODO:
     - [x] BSDF sample(Lambertian, Dielectric, Microfacet, Metallic)
     - [ ] Light sample(light of different shape: sphere, cube, plane, triangles)
     - [ ] Integrate these two sample strategies
+    - [ ] MIS env map
     - [ ] MIS based on luminance of light
     - [ ] Prove the unbiasedness of this method
 - [ ] DOF

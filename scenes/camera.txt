@@ -50,7 +50,7 @@ IOR         1.5
 
 // Camera
 CAMERA
-RES         2400 1600
+RES         1600 1200
 FOVY        5.5
 ITERATIONS  500000
 DEPTH       8

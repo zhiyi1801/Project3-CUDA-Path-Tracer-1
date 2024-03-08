@@ -77,6 +77,7 @@ set(headers
     src/BVH.h
     src/material.h
     src/tiny_obj_loader.hpp
+    src/lightSample.h
     src/ImGui/imconfig.h
 	
 	src/ImGui/imgui.h

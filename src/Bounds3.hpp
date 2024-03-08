@@ -331,10 +331,3 @@ public:
 		return (v[0] + v[1] + v[2]) / 3.f;
 	}
 };
-
-class lightPrim
-{
-	int geomID;
-	int triangleID;
-	GeomType type;
-};

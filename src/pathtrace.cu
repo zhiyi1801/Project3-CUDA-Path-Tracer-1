@@ -178,7 +178,6 @@ __global__ void computeIntersections(
 )
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
-	volatile int textID = pathSegments[path_index].pixelIndex;
 
 	volatile float n1 = 1, n2 = 1, n3 = 1, c1 = 1, c2 = 1, c3 = 1, e1 = 1, e2 = 1, e3 = 1;
 	if (path_index < num_paths)
@@ -303,10 +302,7 @@ __global__ void computeIntersections(
 			rayValid[path_index] = 0;
 			if (dev_scene->envMapID >= 0)
 			{
-				e1 = dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)).x, e2 = dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)).y, e3 = dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)).z;
-				c1 = img[pathSegments[path_index].pixelIndex].x, c2 = img[pathSegments[path_index].pixelIndex].y, c3 = img[pathSegments[path_index].pixelIndex].z;
 				img[pathSegments[path_index].pixelIndex] += math::processNAN(pathSegments[path_index].color * dev_scene->envSampler.linearSample(math::sphere2Plane(pathSegment.ray.direction)));
-				c1 = img[pathSegments[path_index].pixelIndex].x, c2 = img[pathSegments[path_index].pixelIndex].y, c3 = img[pathSegments[path_index].pixelIndex].z;
 			}
 		}
 		else
@@ -340,9 +336,6 @@ __global__ void computeIntersections(
 			}
 
 			n1 = mapped.x, n2 = mapped.y, n3 = mapped.z;
-			n1 = localNorm.x, n2 = localNorm.y, n3 = localNorm.z;
-			n1 = glm::normalize(normal).x, n2 = glm::normalize(normal).y, n3 = glm::normalize(normal).z;
-			n1 = intersections[path_index].surfaceNormal.x, n2 = intersections[path_index].surfaceNormal.y, n3 = intersections[path_index].surfaceNormal.z;
 		}
 #endif // SHOW_NORMAL
 	}

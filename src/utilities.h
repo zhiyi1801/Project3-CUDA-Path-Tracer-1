@@ -210,6 +210,14 @@ namespace math
         );
     }
 
+    //https://www.cs.princeton.edu/~funk/tog02.pdf
+    //return bary centric coords glm::vec2(u, v)
+    __host__ __device__ inline glm::vec2 sampleTriangleUniform(glm::vec2 r)
+    {
+        float t = sqrt(r.x);
+        return glm::vec2(1.f - t, t * (1.f - r.y));
+    }
+
     __host__ __device__
         inline glm::vec3 sampleHemisphereCosine(const glm::vec3& n, glm::vec2 r)
     {
