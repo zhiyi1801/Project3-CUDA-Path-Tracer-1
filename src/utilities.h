@@ -25,8 +25,6 @@
 #define TONEMAPPING 1
 #define VERTEX_NORMAL 1
 #define SHOW_NORMAL 0
-#define MIS_SAMPLE 0
-#define LIGHT_SAMPLE 0
 #define ROUGHNESS_MIN 1e-3
 #define ROUGHNESS_MAX 1.f
 

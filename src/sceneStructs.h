@@ -82,6 +82,7 @@ struct PathSegment {
     glm::vec3 color;
     int pixelIndex;
     int remainingBounces;
+    float prevPdf = -1.f;
 };
 
 // Use with a corresponding PathSegment to do:

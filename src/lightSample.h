@@ -78,7 +78,7 @@ public:
 
 			// Compute the minimum t from the intersection tests to determine what
 			// scene geometry object was hit first.
-			if (t > 0.0f && minT - 1e-5f > t)
+			if (t > 0.0f && minT - 1e-5f > t && glm::abs(t - minT) > 1e-2)
 			{
 				return true;
 			}
@@ -112,7 +112,7 @@ public:
 					tempTri = triangles[i];
 					float u, v;
 					bool isHit = tempTri.getInterSect(ray, t, u, v);
-					if (isHit && minT - 1e-5f > t)
+					if (isHit && minT - 1e-5f > t && glm::abs(t - minT) > 1e-4)
 					{
 						return true;
 					}
@@ -136,19 +136,43 @@ public:
 		return false;
 	}
 
-	__host__ __device__ float lightPDF(int lightID, Sampler sampler)
+	__host__ __device__ float lightPDF(const glm::vec3& viewPos, const glm::vec3 &lightPos, const glm::vec3 &normal, int triID, int geomID, Sampler sampler)const
 	{
-		lightPrim light = lights[lightID];
-
-		if (light.triangleID >= 0)
+		float pdf = -1.f;
+		Geom geom = geoms[geomID];
+		if (triID >= 0)
 		{
-			glm::vec2 baryCentric = math::sampleTriangleUniform(sample2D(sampler));
+			Triangle tri = triangles[triID];
 
+
+			// just use interpolated normal
+			float area = glm::length(glm::cross(tri.v[1] - tri.v[0], tri.v[2] - tri.v[0])) / 2.f;
+			pdf = 1.f / lightSize;
+			// both sides lights
+			pdf = pdf * glm::length2(lightPos - viewPos) / (area * glm::abs(glm::dot(glm::normalize(viewPos - lightPos), normal)));
 		}
+
+		if (geoms[geomID].type == GeomType::SPHERE)
+		{
+			Transform tr{ geom.transform, geom.inverseTransform, glm::mat3(geom.invTranspose), geom.scale };
+			glm::vec3 viewPosL = glm::vec3(tr.invT * glm::vec4(viewPos, 1.f));
+			glm::vec3 center = glm::vec3(0.f);
+
+			float sinThetaMax2 = (0.5f * 0.5f) / glm::dot(viewPosL - center, viewPosL - center); // Again, radius is 1
+			float cosThetaMax = sqrt(max(0.0f, 1.0f - sinThetaMax2));
+
+			pdf = 1.0f / (TWO_PI * (1 - cosThetaMax) * lightSize);
+		}
+		return pdf;
 	}
 
-	__host__ __device__ void lightSample(const glm::vec3& viewPos, const glm::vec3& viewNor, Sampler sampler, lightSampleRecord& rec)const
+	__host__ __device__ void lightSample(const glm::vec3& viewPos, Sampler sampler, lightSampleRecord& rec)const
 	{
+		if (lightSize == 0)
+		{
+			return;
+		}
+
 		int lightID = glm::min(sample1D(sampler) * lightSize, lightSize - 1.f);
 		lightPrim light = lights[lightID];
 		Geom geom = geoms[light.geomID];
@@ -156,6 +180,7 @@ public:
 		glm::vec3 normal(0.f);
 		glm::vec3 lightPos;
 		float pdf = 0;
+		volatile float s1 = 1, s2 = 1, s3 = 1, v1 = 1, v2 = 1, v3 = 1, l1= 1, l2 = 1, l3 = 1;
 		if (light.triangleID >= 0)
 		{
 			glm::vec2 baryCentric = math::sampleTriangleUniform(sample2D(sampler));
@@ -166,7 +191,7 @@ public:
 
 			// just use interpolated normal
 			normal = glm::normalize(u * tri.n[0] + v * tri.n[1] + (1 - u - v) * tri.n[2]);
-			float area = glm::length(glm::cross(tri.v[1] - tri.v[0], tri.v[2] - tri.v[0])) / 2;
+			float area = glm::length(glm::cross(tri.v[1] - tri.v[0], tri.v[2] - tri.v[0])) / 2.f;
 			pdf = 1.f / lightSize;
 			// both sides lights
 			pdf = pdf * glm::length2(lightPos - viewPos) / (area * glm::abs(glm::dot(glm::normalize(viewPos - lightPos), normal)));
@@ -175,44 +200,35 @@ public:
 		else if (light.type == GeomType::SPHERE)
 		{
 			glm::vec2 xi = sample2D(sampler);
-			glm::vec3 scale(glm::length(geom.transform[0]), glm::length(geom.transform[1]), glm::length(geom.transform[2]));
-			Transform tr{ geom.transform, geom.inverseTransform, glm::mat3(geom.invTranspose), scale };
-
+			Transform tr{ geom.transform, geom.inverseTransform, glm::mat3(geom.invTranspose), geom.scale };
+			s1 = tr.scale.x, s2 = tr.scale.y, s3 = tr.scale.z;
+			glm::vec3 viewPosL = glm::vec3(tr.invT * glm::vec4(viewPos, 1.f));
+			v1 = viewPosL.x, v2 = viewPosL.y, v3 = viewPosL.z;
 			glm::vec3 center = glm::vec3(tr.T * glm::vec4(0., 0., 0., 1.));
-			glm::vec3 centerToRef = glm::normalize(center - viewPos);
+			center = glm::vec3(0.f);
+			glm::vec3 centerToRef = glm::normalize(center - viewPosL);
 			glm::vec3 tan, bit;
 
 			math::localRefMatrix_Pixar(centerToRef, tan, bit);
 
-			glm::vec3 pOrigin;
-			if (glm::dot(center - viewPos, viewNor) > 0) {
-				pOrigin = viewPos + viewNor * 1e-5f;
-			}
-			else {
-				pOrigin = viewPos - viewNor * 1e-5f;
-			}
-
-			// Inside the sphere
-			//if (dot(pOrigin - center, pOrigin - center) <= 1.f) // Radius is 1, so r^2 is also 1
-			//	return sampleFromInsideSphere(xi, pdf);
-
-			float sinThetaMax2 = 1.f / glm::dot(viewPos - center, viewPos - center); // Again, radius is 1
+			float sinThetaMax2 = (0.5f * 0.5f) / glm::dot(viewPosL - center, viewPosL - center); // Again, radius is 1
 			float cosThetaMax = sqrt(max(0.0f, 1.0f - sinThetaMax2));
 			float cosTheta = (1.0f - xi.x) + xi.x * cosThetaMax;
 			float sinTheta = sqrt(max(0.f, 1.0f - cosTheta * cosTheta));
 			float phi = xi.y * TWO_PI;
 
-			float dc = glm::distance(viewPos, center);
-			float ds = dc * cosTheta - sqrt(max(0.0f, 1 - dc * dc * sinTheta * sinTheta));
+			float dc = glm::distance(viewPosL, center);
+			float ds = dc * cosTheta - sqrt(max(0.0f, 0.5f * 0.5f - dc * dc * sinTheta * sinTheta));
 
-			float cosAlpha = (dc * dc + 1 - ds * ds) / (2 * dc * 1);
-			float sinAlpha = sqrt(max(0.0f, 1.0f - cosAlpha * cosAlpha));
+			float sinAlpha = ds * sinTheta / 0.5f;
+			float cosAlpha = glm::sqrt(glm::max(0.f, 1.f - sinAlpha * sinAlpha));
 
-			glm::vec3 nObj = sinAlpha * cos(phi) * -tan + sinAlpha * sin(phi) * -bit + cosAlpha * -centerToRef;
-			glm::vec3 pObj = glm::vec3(nObj); // Would multiply by radius, but it is always 1 in object space
+			glm::vec3 nObj = sinAlpha * cos(phi) * tan + sinAlpha * sin(phi) * bit + cosAlpha * -centerToRef;
+			glm::vec3 pObj = nObj * 0.5f; // Would multiply by radius, but it is always 1 in object space
 
 			lightPos = glm::vec3(tr.T * glm::vec4(pObj, 1.0f));
-			pdf = 1.0f / (TWO_PI * (1 - cosThetaMax) * lightSize * tr.scale.x * tr.scale.y);
+			l1 = lightPos.x, l2 = lightPos.y, l3 = lightPos.z;
+			pdf = 1.0f / (TWO_PI * (1 - cosThetaMax) * lightSize);
 		}
 
 		glm::vec3 rayDir = glm::normalize(lightPos - viewPos);

@@ -12,6 +12,7 @@ static double lastX;
 static double lastY;
 
 bool camchanged = true;
+SampleMode sampleMode = SampleMode::MIS;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
 

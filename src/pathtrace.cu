@@ -18,6 +18,9 @@
 #include "intersections.h"
 #include "interactions.h"
 #include "lightSample.h"
+#include "preview.h"
+
+extern SampleMode sampleMode;
 
 __host__ __device__
 thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth) {
@@ -178,6 +181,7 @@ __global__ void computeIntersections(
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
+	volatile int textID = pathSegments[path_index].pixelIndex;
 	volatile float n1 = 1, n2 = 1, n3 = 1, c1 = 1, c2 = 1, c3 = 1, e1 = 1, e2 = 1, e3 = 1;
 	if (path_index < num_paths)
 	{
@@ -353,6 +357,11 @@ __global__ void DirectLiPTkernel(
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+	PathSegment segment = pathSegments[idx];
+	Sampler rng = makeSeededRandomEngine(iter, idx, depth);
+	volatile int textID = segment.pixelIndex;
+
 	if (idx >= num_paths)
 	{
 		return;
@@ -367,6 +376,8 @@ __global__ void DirectLiPTkernel(
 		pathSegments[idx].remainingBounces = 0;
 		return;
 	}
+	glm::vec3 viewPos = intersection.interPoint;
+	glm::vec3 viewNor = intersection.surfaceNormal;
 
 	glm::vec3 wo = -pathSegments[idx].ray.direction;
 	Material::Type mType = mat.type;
@@ -376,12 +387,8 @@ __global__ void DirectLiPTkernel(
 		img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
 		return;
 	}
-
-	glm::vec3 viewPos = intersection.interPoint;
-	glm::vec3 viewNor = intersection.surfaceNormal;
-	Sampler rng = makeSeededRandomEngine(iter, idx, depth);
 	lightSampleRecord LiRec;
-	lightSampler.lightSample(viewPos, viewNor, rng, LiRec);
+	lightSampler.lightSample(viewPos, rng, LiRec);
 
 	if (LiRec.pdf <= 0)
 	{
@@ -390,7 +397,7 @@ __global__ void DirectLiPTkernel(
 	}
 	glm::vec3 wi = glm::normalize(LiRec.pos - intersection.interPoint);
 	glm::vec3 bsdf = mat.BSDF(intersection, pathSegments[idx].ray.direction, wi);
-	pathSegments[idx].color *= bsdf * LiRec.emit * glm::max(glm::dot(wi, intersection.surfaceNormal), 0.f) / LiRec.pdf;
+	pathSegments[idx].color *= (bsdf * LiRec.emit * glm::max(glm::dot(wi, intersection.surfaceNormal), 0.f) / LiRec.pdf);
 	img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
 }
 
@@ -480,6 +487,96 @@ __global__ void PTkernel(
 		ic1 = offsetDir.x, ic2 = offsetDir.y, ic3 = offsetDir.z;
 		o1 = pathSegments[idx].ray.origin.x, o2 = pathSegments[idx].ray.origin.y, o3 = pathSegments[idx].ray.origin.z;
 		c01 = pathSegments[idx].color.x, c02 = pathSegments[idx].color.y, c03 = pathSegments[idx].color.z;
+
+		if (--(pathSegments[idx].remainingBounces) == 0)
+		{
+			pathSegments[idx].color = glm::vec3(0.0f);
+			rayValid[idx] = 0;
+		}
+	}
+}
+
+__global__ void MisPTkernel(
+	int iter
+	, int depth
+	, int num_paths
+	, ShadeableIntersection* shadeableIntersections
+	, PathSegment* pathSegments
+	, Material* materials
+	, int* rayValid
+	, glm::vec3* img
+	, const LightSampler& lightSampler
+)
+{
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_paths)
+	{
+		return;
+	}
+	volatile int textID = pathSegments[idx].pixelIndex;
+	ShadeableIntersection intersection = shadeableIntersections[idx];
+	glm::vec3 wo = -pathSegments[idx].ray.direction;
+	Material mat = materials[intersection.materialId];
+	Material::Type mType = mat.type;
+
+	if (intersection.t <= 0.f)
+	{
+		pathSegments[idx].color *= 0;
+		pathSegments[idx].remainingBounces = 0;
+		rayValid[idx] = 0;
+		return;
+	}
+
+	bool isDelta = (mType == Material::Dielectric);
+	Sampler rng = makeSeededRandomEngine(iter, idx, depth);
+	scatter_record srec;
+	bool ifScatter = mat.scatterSample(intersection, pathSegments[idx].ray.direction, srec, rng);
+	glm::vec3 viewPos = intersection.interPoint;
+	glm::vec3 viewNor = intersection.surfaceNormal;
+
+	if (srec.pdf == 0)
+	{
+		pathSegments[idx].color *= 0;
+		pathSegments[idx].remainingBounces = 0;
+		rayValid[idx] = 0;
+	}
+	// If the material indicates that the object is a light
+	else if (mType == Material::Type::Light) {
+		float weight = 1.f;
+		if (pathSegments[idx].prevPdf > 0)
+		{
+			//here we hit the light, so lightPos is intersection.interPoint
+			float lightPdf = lightSampler.lightPDF(pathSegments[idx].ray.origin, viewPos, viewNor, intersection.triangleID, intersection.geomID, rng);
+			float bsdfPdf = pathSegments[idx].prevPdf;
+			weight = math::powerHeuristic(pathSegments[idx].prevPdf, lightPdf);
+		}
+		pathSegments[idx].color *= (srec.bsdf / srec.pdf) * weight;
+		pathSegments[idx].remainingBounces = 0;
+		rayValid[idx] = 0;
+		img[pathSegments[idx].pixelIndex] += math::processNAN(pathSegments[idx].color);
+	}
+
+	else {
+		if (!isDelta)
+		{
+			lightSampleRecord LiRec;
+			lightSampler.lightSample(viewPos, rng, LiRec);
+			glm::vec3 Liwi = glm::normalize(LiRec.pos - viewPos);
+			float bsdfPdf = mat.pdf(intersection, pathSegments[idx].ray.direction, Liwi);
+			float lightPdf = LiRec.pdf;
+			glm::vec3 Libsdf = mat.BSDF(intersection, pathSegments[idx].ray.direction, Liwi);
+			float weight = math::powerHeuristic(LiRec.pdf, srec.pdf);
+			img[pathSegments[idx].pixelIndex] += math::processNAN(weight * pathSegments[idx].color * LiRec.emit * Libsdf * glm::max(glm::dot(Liwi, intersection.surfaceNormal), 0.f) / LiRec.pdf);
+		}
+
+		glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;
+		pathSegments[idx].ray.direction = srec.dir;
+		//pathSegments[idx].ray.origin = intersection.interPoint + 
+		//								(mType == Material::Type::Dielectric ? 100 : 1) * RAY_BIAS * offsetDir;
+		pathSegments[idx].ray.origin = intersection.interPoint + (mType == Material::Type::Dielectric ? 1e-3f * offsetDir : 1e-4f * srec.dir);
+		pathSegments[idx].color *= (srec.bsdf * glm::abs(glm::dot(srec.dir, intersection.surfaceNormal)) / srec.pdf);
+		rayValid[idx] = 1;
+		pathSegments[idx].prevPdf = isDelta ? -1.f : srec.pdf;
 
 		if (--(pathSegments[idx].remainingBounces) == 0)
 		{
@@ -639,28 +736,49 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 
 		//QueryPerformanceCounter(&t1);
 
-		//PTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
-		//	iter,
-		//	depth,
-		//	num_paths,
-		//	dev_intersections1,
-		//	dev_paths1,
-		//	dev_materials,
-		//	rayValid,
-		//	dev_image
-		//	);
-
-		DirectLiPTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
-			iter,
-			depth,
-			num_paths,
-			dev_intersections1,
-			dev_paths1,
-			dev_materials,
-			rayValid,
-			dev_image,
-			dev_scene->dev_lightSampler
-			);
+		switch (sampleMode)
+		{
+			case SampleMode::BSDF:
+				PTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
+					iter,
+					depth,
+					num_paths,
+					dev_intersections1,
+					dev_paths1,
+					dev_materials,
+					rayValid,
+					dev_image
+					);
+				break;
+			case SampleMode::DirectLi:
+				DirectLiPTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
+					iter,
+					depth,
+					num_paths,
+					dev_intersections1,
+					dev_paths1,
+					dev_materials,
+					rayValid,
+					dev_image,
+					dev_scene->dev_lightSampler
+					);
+				break;
+			case SampleMode::MIS:
+				MisPTkernel << <numblocksPathSegmentTracing, blockSize1d >> > (
+					iter,
+					depth,
+					num_paths,
+					dev_intersections1,
+					dev_paths1,
+					dev_materials,
+					rayValid,
+					dev_image,
+					dev_scene->dev_lightSampler
+					);
+				break;
+			default:
+				break;
+		}
 
 		//QueryPerformanceCounter(&t2);
 		//time = (double)(t2.QuadPart - t1.QuadPart) / (double)tc.QuadPart;

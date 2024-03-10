@@ -16,6 +16,7 @@ ImGuiIO* io = nullptr;
 bool mouseOverImGuiWinow = false;
 extern bool camchanged;
 extern float theta, phi;
+extern SampleMode sampleMode;
 
 std::string currentTimeString() {
 	time_t now;
@@ -240,6 +241,15 @@ void RenderImGui()
 
 	ImGui::Text("Camera look at: %3f  %3f  %3f", lookat.x, lookat.y, lookat.z);
 	ImGui::End();
+
+	ImGui::Begin("Options"); {
+		const char* sampleModes[] = { "BSDF", "DirectLight", "MIS"};
+		if (ImGui::Combo("SampleMode", (int*)(&sampleMode), sampleModes, IM_ARRAYSIZE(sampleModes))) {
+			camchanged = true;
+		}
+		ImGui::Separator();
+		ImGui::End();
+	}
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
