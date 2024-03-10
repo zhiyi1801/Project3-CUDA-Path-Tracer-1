@@ -158,6 +158,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 		segment.pixelIndex = index;
 
 		segment.remainingBounces = traceDepth;
+		segment.prevPdf = -1.f;
 	}
 }
 
@@ -565,7 +566,7 @@ __global__ void MisPTkernel(
 			float bsdfPdf = mat.pdf(intersection, pathSegments[idx].ray.direction, Liwi);
 			float lightPdf = LiRec.pdf;
 			glm::vec3 Libsdf = mat.BSDF(intersection, pathSegments[idx].ray.direction, Liwi);
-			float weight = math::powerHeuristic(LiRec.pdf, srec.pdf);
+			float weight = math::powerHeuristic(LiRec.pdf, bsdfPdf);
 			img[pathSegments[idx].pixelIndex] += math::processNAN(weight * pathSegments[idx].color * LiRec.emit * Libsdf * glm::max(glm::dot(Liwi, intersection.surfaceNormal), 0.f) / LiRec.pdf);
 		}
 
@@ -735,6 +736,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	  // path segments that have been reshuffled to be contiguous in memory.
 
 		//QueryPerformanceCounter(&t1);
+
 
 		switch (sampleMode)
 		{
