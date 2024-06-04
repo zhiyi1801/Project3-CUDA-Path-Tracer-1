@@ -17,14 +17,6 @@ ROUGHNESS   0
 NORMAL	    NULL
 IOR         1.5
 
-MATERIAL 	Lens
-ALBEDO	..\scenes\model\Camera\textures\lens_base.png
-TYPE		MetallicWorkflow
-METALLIC	..\scenes\model\Camera\textures\lens_metallic.png
-ROUGHNESS	..\scenes\model\Camera\textures\lens_rough.png
-NORMAL          ..\scenes\model\Camera\textures\lens_norm.png
-IOR			0
-
 // Camera
 CAMERA
 RES         1600 1200
@@ -44,9 +36,9 @@ TRANS	0 0 0
 ROTAT	0 0 0
 SCALE		5 5 5
 
-OBJECT 	lens
-..\scenes\model\Camera\lens.obj
-material 	Lens
+OBJECT 	glass
+..\scenes\model\Camera\glass.obj
+material 	Glass
 TRANS	0 0 0
 ROTAT	0 0 0
 SCALE		10 10 10
