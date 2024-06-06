@@ -2,6 +2,11 @@
 #include "preview.h"
 #include <cstring>
 
+extern "C"
+{
+	__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+}
+
 static std::string startTimeString;
 
 // For camera controls
@@ -41,6 +46,31 @@ void testfunc()
 }
 
 int main(int argc, char** argv) {
+
+	int deviceCount;
+	cudaGetDeviceCount(&deviceCount);
+
+	if (deviceCount == 0) {
+		std::cout << "No CUDA-capable devices were detected." << std::endl;
+	}
+	else {
+		for (int device = 0; device < deviceCount; ++device) {
+			cudaDeviceProp prop;
+			cudaGetDeviceProperties(&prop, device);
+
+			std::cout << "Device " << device << ":\"" << prop.name << "\""
+				<< " compute capability: " << prop.major << "." << prop.minor
+				<< ", core clock: " << prop.clockRate / 1000 << " MHz"
+				<< ", memory clock: " << prop.memoryClockRate / 1000 << " MHz"
+				<< ", memory bus width: " << prop.memoryBusWidth << " bits"
+				<< ", L2 cache size: " << prop.l2CacheSize << " bytes"
+				<< ", max threads per block: " << prop.maxThreadsPerBlock
+				<< ", max blocks per SM: " << prop.maxBlocksPerMultiProcessor
+				<< ", regs per block: " << prop.regsPerBlock
+				<< ", warp size: " << prop.warpSize
+				<< std::endl;
+		}
+	}
 
 	//testfunc();
 	startTimeString = currentTimeString();
