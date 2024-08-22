@@ -5,3 +5,5 @@ https://zhuanlan.zhihu.com/p/416164394
 bug fixed
 refraction bug: use Pixar's Tangent Space algorithm find localRefMatrix_Pixar in utilities cpp
 https://marc-b-reynolds.github.io/quaternions/2016/07/06/Orthonormal.html#fn:frisvad
+
+integrated graphics issue: https://blog.csdn.net/ppdyhappy/article/details/108084248
