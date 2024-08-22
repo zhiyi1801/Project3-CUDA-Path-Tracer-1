@@ -546,10 +546,10 @@ __global__ void MisPTkernel(
 		float weight = 1.f;
 		if (pathSegments[idx].prevPdf > 0)
 		{
-			//here we hit the light, so lightPos is intersection.interPoint
+			//here we hit the light, so lightPos is intersection.interPoint = viewPos
 			float lightPdf = lightSampler.lightPDF(pathSegments[idx].ray.origin, viewPos, viewNor, intersection.triangleID, intersection.geomID, rng);
 			float bsdfPdf = pathSegments[idx].prevPdf;
-			weight = math::powerHeuristic(pathSegments[idx].prevPdf, lightPdf);
+			weight = math::powerHeuristic(bsdfPdf, lightPdf);
 		}
 		pathSegments[idx].color *= (srec.bsdf / srec.pdf) * weight;
 		pathSegments[idx].remainingBounces = 0;
@@ -566,8 +566,8 @@ __global__ void MisPTkernel(
 			float bsdfPdf = mat.pdf(intersection, pathSegments[idx].ray.direction, Liwi);
 			float lightPdf = LiRec.pdf;
 			glm::vec3 Libsdf = mat.BSDF(intersection, pathSegments[idx].ray.direction, Liwi);
-			float weight = math::powerHeuristic(LiRec.pdf, bsdfPdf);
-			img[pathSegments[idx].pixelIndex] += math::processNAN(weight * pathSegments[idx].color * LiRec.emit * Libsdf * glm::max(glm::dot(Liwi, intersection.surfaceNormal), 0.f) / LiRec.pdf);
+			float weight = math::powerHeuristic(lightPdf, bsdfPdf);
+			img[pathSegments[idx].pixelIndex] += math::processNAN(weight * pathSegments[idx].color * LiRec.emit * Libsdf * glm::max(glm::dot(Liwi, intersection.surfaceNormal), 0.f) / lightPdf);
 		}
 
 		glm::vec3 offsetDir = glm::dot(srec.dir, intersection.surfaceNormal) > 0 ? intersection.surfaceNormal : -intersection.surfaceNormal;

@@ -308,7 +308,7 @@ public:
 
         return glm::mix((1.f - sampleMetallic) * sampleAlbedo * InvPI, glm::vec3(D * G2 / glm::max(4 * cosO * cosI, 1e-8f)), F);
     }
-
+    
     __host__ __device__ float metallicPDF(const glm::vec3& n, const glm::vec3& wo, const glm::vec3& wi, float sampleRoughness, float sampleMetallic)
     {
         float a2 = sampleRoughness * sampleRoughness;
@@ -480,7 +480,7 @@ public:
         return false;
     }
 
-    __device__ glm::vec3 BSDF(const ShadeableIntersection& intersection, const glm::vec3& wo, const glm::vec3& wi) {
+    __host__ __device__ glm::vec3 BSDF(const ShadeableIntersection& intersection, const glm::vec3& wo, const glm::vec3& wi) {
         glm::vec2 uv = intersection.texCoords;
         glm::vec3 n = intersection.surfaceNormal;
         float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);
@@ -500,7 +500,7 @@ public:
         return glm::vec3(0.f);
     }
 
-    __device__ float pdf(const ShadeableIntersection& intersection, const glm::vec3& wo, const glm::vec3& wi) {
+    __host__ __device__ float pdf(const ShadeableIntersection& intersection, const glm::vec3& wo, const glm::vec3& wi) {
         glm::vec2 uv = intersection.texCoords;
         glm::vec3 n = intersection.surfaceNormal;
         float sampleRoughness = glm::clamp(roughnessSampler.linearSample(uv).x, static_cast<float>(ROUGHNESS_MIN), ROUGHNESS_MAX);

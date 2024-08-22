@@ -9,7 +9,7 @@ RecursiveBVHNode* BVHAccel::recursiveBuild(std::vector<Triangle>& t)
 #endif // USE_SAH
 }
 
-//don't forget define destroy function !!!!!!!!!!!!!!!!!!!!!!!!!!
+//don't forget define destroy function !
 RecursiveBVHNode* BVHAccel::recursiveBuildSAH(std::vector<Triangle>& t, const int start, const int end)
 {
 	struct BucketInfo

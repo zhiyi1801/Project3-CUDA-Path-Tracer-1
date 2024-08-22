@@ -151,6 +151,11 @@ public:
 
 namespace math
 {
+    __host__ __device__ inline float rgb2Luminance(const glm::vec3& rgb)
+    {
+        return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+    }
+
     template <typename T>
     __host__ __device__ inline T Sqr(T v) { return v * v; }
 

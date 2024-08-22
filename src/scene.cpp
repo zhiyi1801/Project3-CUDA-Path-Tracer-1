@@ -510,6 +510,18 @@ void Scene::setDevData()
         }
     }
 
+    if (envMapID >= 0)
+    {
+        image* envMap = this->textures[envMapID];
+        std::vector<float> envVals;
+        for (int i = 0; i < envMap->height; i++) {
+            for (int j = 0; j < envMap->width; j++) {
+                int idx = i * envMap->width + j;
+                envVals.emplace_back(math::rgb2Luminance(envMap->data()[idx]) * glm::sin((.5f + i) / envMap->height * PI));
+            }
+        }
+        envDistri = Distribution1D(envVals);
+    }
 
     this->bvhRoot = this->bvhConstructor.recursiveBuild(this->triangles);
     this->bvhConstructor.recursiveBuildGpuBVHInfo(bvhRoot, this->gpuBVHNodeInfos);
@@ -606,6 +618,7 @@ void DevScene::initiate(Scene& scene)
     if (this->envMapID >= 0)
     {
         this->envSampler.tex = dev_textures + this->envMapID;
+        this->envDistri.create(scene.envDistri);
     }
 
     cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
@@ -650,4 +663,5 @@ void DevScene::destroy()
     cudaSafeFree(dev_gpuBVH);
     cudaSafeFree(dev_textures);
     cudaSafeFree(dev_texture_data);
+    envDistri.destroy();
 }

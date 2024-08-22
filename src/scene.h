@@ -44,9 +44,9 @@ public:
 
     lightPrim* dev_lights;
     LightSampler dev_lightSampler;
+    DevDistri1D envDistri;
 
     Geom* dev_geoms;
-
     Material* dev_materials;
 };
 
@@ -77,6 +77,7 @@ public:
     std::vector<GpuBVHNodeInfo> gpuBVHNodeInfos;
     std::vector<GpuBVHNode> gpuBVHNodes;
     RecursiveBVHNode* bvhRoot;
+    Distribution1D envDistri;
 
     BVHAccel bvhConstructor;
     DevScene tempDevScene;
