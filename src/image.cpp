@@ -50,7 +50,11 @@ void image::setPixel(int x, int y, const glm::vec3 &pixel) {
 }
 
 void image::savePNG(const std::string &baseFilename) {
-    unsigned char *bytes = new unsigned char[3 * width * height];
+    savePNG(baseFilename, 3);
+}
+
+void image::savePNG(const std::string& baseFilename, int channels) {
+    unsigned char* bytes = new unsigned char[3 * width * height];
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int i = y * width + x;
@@ -62,7 +66,7 @@ void image::savePNG(const std::string &baseFilename) {
     }
 
     std::string filename = baseFilename + ".png";
-    stbi_write_png(filename.c_str(), width, height, 3, bytes, width * 3);
+    stbi_write_png(filename.c_str(), width, height, 3, bytes, width * channels);
     std::cout << "Saved " << filename << "." << std::endl;
 
     delete[] bytes;

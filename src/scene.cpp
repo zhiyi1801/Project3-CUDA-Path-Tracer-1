@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include "stb_image.h"
+#include "stb_image_write.h"
 
 extern float theta, phi;
 extern bool posInit;
@@ -514,13 +515,17 @@ void Scene::setDevData()
     {
         image* envMap = this->textures[envMapID];
         std::vector<float> envVals;
+        std::vector<unsigned char> envValsChar;
         for (int i = 0; i < envMap->height; i++) {
             for (int j = 0; j < envMap->width; j++) {
                 int idx = i * envMap->width + j;
                 envVals.emplace_back(math::rgb2Luminance(envMap->data()[idx]) * glm::sin((.5f + i) / envMap->height * PI));
+                envValsChar.emplace_back(envVals.back() * 255.f);
             }
         }
-        envDistri = Distribution1D(envVals);
+        envDistribution = Distribution1D(envVals);
+
+        stbi_write_png("output.png", envMap->width, envMap->height, 1, envValsChar.data(), envMap->width * 1);
     }
 
     this->bvhRoot = this->bvhConstructor.recursiveBuild(this->triangles);
@@ -618,7 +623,7 @@ void DevScene::initiate(Scene& scene)
     if (this->envMapID >= 0)
     {
         this->envSampler.tex = dev_textures + this->envMapID;
-        this->envDistri.create(scene.envDistri);
+        this->envDistribution.create(scene.envDistribution);
     }
 
     cudaMalloc(&dev_triangles, sizeof(Triangle) * scene.triangles.size());
@@ -663,5 +668,5 @@ void DevScene::destroy()
     cudaSafeFree(dev_gpuBVH);
     cudaSafeFree(dev_textures);
     cudaSafeFree(dev_texture_data);
-    envDistri.destroy();
+    envDistribution.destroy();
 }
