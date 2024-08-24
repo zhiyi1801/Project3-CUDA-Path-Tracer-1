@@ -47,7 +47,9 @@ int main() {
         if(i > 0) {
             printf(" ");
         }
-        printf("%d", *it);
+        // IF CMAKE CAN NOT CAPTURE THE OUTPUT OF printf, USE fprintf INSTEAD
+        fprintf(stderr, "%d", *it);
+        // printf("%d", *it);
     }
     /* don't just return the number of gpus, because other runtime cuda
     errors can also yield non-zero return values */

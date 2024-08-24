@@ -78,6 +78,8 @@ set(headers
     src/material.h
     src/tiny_obj_loader.hpp
     src/lightSample.h
+    src/distribution1D.h
+    src/distribution2D.h
     src/ImGui/imconfig.h
 	
 	src/ImGui/imgui.h
@@ -103,6 +105,8 @@ set(sources
     src/BVH.cpp
     src/material.cpp
     src/tiny_obj_loader.cpp
+    src/distribution1D.cpp
+    src/distribution2D.cpp
 	
     src/ImGui/imgui.cpp 
       src/ImGui/imgui_demo.cpp 

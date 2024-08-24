@@ -18,6 +18,7 @@
 #include "material.h"
 #include "image.h"
 #include "lightSample.h"
+#include "distribution1D.h"
 
 using namespace std;
 
@@ -44,7 +45,7 @@ public:
 
     lightPrim* dev_lights;
     LightSampler dev_lightSampler;
-    DevDistri1D envDistri;
+    DevDistribution1D envDistri;
 
     Geom* dev_geoms;
     Material* dev_materials;
